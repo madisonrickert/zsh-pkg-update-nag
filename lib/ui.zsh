@@ -53,6 +53,33 @@ _zpun_ui_info()  { _zpun_ui_say dim "$*" ; }
 _zpun_ui_ok()    { _zpun_ui_say ok  "$*" ; }
 _zpun_ui_error() { _zpun_ui_say err "$*" >&2 ; }
 
+# _zpun_ui_status <message> — overwrite the current status line on stderr.
+# Used during provider scans to signal progress. Silent when stderr isn't a TTY
+# (so captured output in tests and command substitution stays clean).
+# Always returns 0 — callers use these at the end of functions and shouldn't
+# inherit a "no TTY" as a failure.
+_zpun_ui_status() {
+  emulate -L zsh
+  setopt local_options
+
+  [[ -t 2 && $TERM != dumb ]] || return 0
+
+  if [[ -z ${NO_COLOR-} ]]; then
+    # \r returns to column 1; \033[K erases to end of line.
+    print -nP -r -- "\r\033[K  %F{244}…%f $*" >&2
+  else
+    print -n -r -- "\r\033[K  ... $*" >&2
+  fi
+}
+
+_zpun_ui_status_clear() {
+  emulate -L zsh
+  setopt local_options
+  [[ -t 2 ]] || return 0
+  print -n -r -- "\r\033[K" >&2
+  return 0
+}
+
 # _zpun_ui_render_summary <lines…> — print the grouped tier-1 summary.
 # Each input line is manager\tname\tcurrent\tlatest.
 _zpun_ui_render_summary() {

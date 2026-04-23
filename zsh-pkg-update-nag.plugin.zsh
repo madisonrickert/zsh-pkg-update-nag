@@ -53,6 +53,8 @@ _zpun_collect_outdated() {
     provider_fn="_zpun_provider_${manager}"
     (( $+functions[$provider_fn] )) || continue
 
+    _zpun_ui_status "Checking ${_ZPUN_MANAGER_LABELS[$manager]:-$manager}…"
+
     if result=$( "${timeout_cmd[@]}" zsh -c "source '$_ZPUN_DIR/lib/config.zsh'; _zpun_config_load; source '$_ZPUN_DIR/lib/providers/${manager}.zsh'; $provider_fn" 2>>"$(_zpun_debug_log_path)" ); then
       while IFS= read -r line; do
         [[ -n $line ]] || continue
@@ -62,6 +64,8 @@ _zpun_collect_outdated() {
       _zpun_debug_log "provider $manager exited non-zero"
     fi
   done
+
+  _zpun_ui_status_clear
 }
 
 # _zpun_timeout_prefix — print a command prefix like "timeout 10" if a timeout
@@ -110,9 +114,10 @@ _zpun_main() {
   _zpun_rate_limit_is_due || return 0
 
   _zpun_rate_limit_acquire_lock || return 0
-  # Safety net: if the user Ctrl-C's mid-prompt or the shell exits during the
-  # check, still release the lock and refresh the stamp so we don't re-nag.
-  trap '_zpun_rate_limit_release_lock; _zpun_rate_limit_stamp; trap - INT TERM EXIT' INT TERM EXIT
+  # Safety net: if the user Ctrl-C's mid-scan or the shell exits during the
+  # check, clear any lingering status line, release the lock, and refresh the
+  # stamp so we don't re-nag.
+  trap '_zpun_ui_status_clear; _zpun_rate_limit_release_lock; _zpun_rate_limit_stamp; trap - INT TERM EXIT' INT TERM EXIT
 
   local -a outdated
   outdated=( ${(f)"$(_zpun_collect_outdated)"} )
