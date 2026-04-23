@@ -64,11 +64,14 @@ _zpun_ui_status() {
 
   [[ -t 2 && $TERM != dumb ]] || return 0
 
+  # Use $'...' quoting so CR and ESC[K are actual control bytes rather than
+  # backslash-escape text. The `-r` flag on `print` would suppress backslash
+  # interpretation, so pre-resolve the control sequence here instead.
+  local reset=$'\r\033[K'
   if [[ -z ${NO_COLOR-} ]]; then
-    # \r returns to column 1; \033[K erases to end of line.
-    print -nP -r -- "\r\033[K  %F{244}…%f $*" >&2
+    print -nP -- "${reset}  %F{244}…%f $*" >&2
   else
-    print -n -r -- "\r\033[K  ... $*" >&2
+    print -n -- "${reset}  ... $*" >&2
   fi
 }
 
@@ -76,7 +79,7 @@ _zpun_ui_status_clear() {
   emulate -L zsh
   setopt local_options
   [[ -t 2 ]] || return 0
-  print -n -r -- "\r\033[K" >&2
+  print -n -- $'\r\033[K' >&2
   return 0
 }
 
