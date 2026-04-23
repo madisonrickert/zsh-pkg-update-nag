@@ -48,7 +48,7 @@ _zpun_collect_outdated() {
     provider_fn="_zpun_provider_${manager}"
     (( $+functions[$provider_fn] )) || continue
 
-    if result=$( "${timeout_cmd[@]}" zsh -c "source '$_ZPUN_DIR/lib/config.zsh'; source '$_ZPUN_DIR/lib/providers/${manager}.zsh'; $provider_fn" 2>>"$(_zpun_debug_log_path)" ); then
+    if result=$( "${timeout_cmd[@]}" zsh -c "source '$_ZPUN_DIR/lib/config.zsh'; _zpun_config_load; source '$_ZPUN_DIR/lib/providers/${manager}.zsh'; $provider_fn" 2>>"$(_zpun_debug_log_path)" ); then
       while IFS= read -r line; do
         [[ -n $line ]] || continue
         print -r -- "${manager}"$'\t'"${line}"

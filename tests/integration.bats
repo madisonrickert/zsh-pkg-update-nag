@@ -51,7 +51,8 @@ teardown() { teardown_env ; }
 }
 
 @test "collect aggregates across multiple managers with manager-prefix" {
-  run run_plugin_zsh "zsh_pkg_update_nag_gem=all; _zpun_collect_outdated"
+  # Export so the per-provider subshell inherits the override.
+  run run_plugin_zsh "export zsh_pkg_update_nag_gem=all; _zpun_collect_outdated"
   [ "$status" -eq 0 ]
   [[ "$output" == *$'brew\tgh\t2.60.0\t2.62.0'* ]]
   [[ "$output" == *$'npm\tpnpm\t9.0.0\t9.5.1'* ]]

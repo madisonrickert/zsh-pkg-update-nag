@@ -5,11 +5,12 @@ load helpers
 setup()    { setup_env ; }
 teardown() { teardown_env ; }
 
-@test "brew provider emits tsv for outdated formulae" {
+@test "brew provider emits tsv for outdated formulae and casks" {
   run run_plugin_zsh "_zpun_provider_brew"
   [ "$status" -eq 0 ]
   [[ "$output" == *"gh	2.60.0	2.62.0"* ]]
   [[ "$output" == *"fd	10.1.0	10.2.0"* ]]
+  [[ "$output" == *"claude-code@latest	0.9.0	0.9.1"* ]]
 }
 
 @test "brew provider is silent when nothing is outdated" {
