@@ -80,7 +80,7 @@ exec zsh
 
 ### Verify it worked
 
-Open a fresh terminal. The first check runs immediately — if anything on your allowlist (or across all managers, on the default config) is outdated, you'll see the update prompt. If nothing's outdated, the shell is silent by design.
+Open a fresh terminal. In the default (synchronous) mode the check runs before your first prompt — if anything is outdated you'll see the update prompt; if nothing's outdated the shell is silent. In background mode (`ZSH_PKG_UPDATE_NAG_BACKGROUND=1`) a dim `(checking…)` notice appears at the first prompt and results follow once the scan finishes.
 
 Confirm detected managers and the computed config any time with:
 
@@ -118,12 +118,30 @@ zsh_pkg_update_nag_gem=off
 | Variable | Purpose |
 |---|---|
 | `ZSH_PKG_UPDATE_NAG_DISABLE=1` | Disable the plugin entirely (no check on shell start). |
+| `ZSH_PKG_UPDATE_NAG_BACKGROUND=1` | Run the scan in the background so plugin load returns instantly (see below). |
 | `ZSH_PKG_UPDATE_NAG_FORCE=1` | Ignore the rate-limit for this shell. |
 | `ZSH_PKG_UPDATE_NAG_SSH=1` | Opt in under SSH sessions (default: skipped). |
 | `ZSH_PKG_UPDATE_NAG_DEBUG=1` | Append diagnostics to `$XDG_STATE_HOME/zsh-pkg-update-nag/debug.log`. |
 | `ZSH_PKG_UPDATE_NAG_PROVIDER_TIMEOUT` | Per-provider timeout in seconds (default `10`). |
 | `ZSH_PKG_UPDATE_NAG_CONFIG` | Override config file path. |
 | `NO_COLOR=1` | Disable color output (respected per the [NO_COLOR](https://no-color.org) spec). |
+
+#### Background mode (`ZSH_PKG_UPDATE_NAG_BACKGROUND=1`)
+
+By default the plugin scans synchronously at shell startup and blocks until all providers have responded. Setting this variable makes the scan run in a background process instead, so your shell prompt appears immediately.
+
+```zsh
+# ~/.zshrc (before the plugin loads)
+export ZSH_PKG_UPDATE_NAG_BACKGROUND=1
+```
+
+What you'll see:
+
+- **First prompt** — a dim notice `(checking for package updates in the background…)` appears once while the scan is in flight.
+- **When the scan finishes** (before your next prompt) — either the normal update prompt, or `All packages up to date.` if nothing needs upgrading.
+- **`--now`** always runs synchronously regardless of this setting, so progress output remains visible.
+
+Results are written atomically to `$XDG_STATE_HOME/zsh-pkg-update-nag/pending_updates` and consumed once displayed. If you open several shells at once, the rate-limit lock ensures only one background scan runs; subsequent shells will pick up the same results when their first prompt fires.
 
 ## Subcommands
 
