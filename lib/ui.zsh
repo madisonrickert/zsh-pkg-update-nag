@@ -212,6 +212,20 @@ _zpun_ui_read_choice() {
     print -n -r -- "  ${prompt} " >&2
   fi
 
+  # Put the terminal in non-canonical mode for the duration of the read so a
+  # single keypress is sufficient — `read -k 1` only consumes one byte but
+  # the kernel buffers input until Enter while the line is in cooked mode.
+  # The function-local EXIT trap (active under `emulate -L zsh`'s default
+  # LOCAL_TRAPS) restores the tty on every exit path, including signals.
+  local saved_tty
+  if [[ -t 0 ]]; then
+    saved_tty=$(stty -g 2>/dev/null)
+    if [[ -n $saved_tty ]]; then
+      stty -icanon min 1 time 0 2>/dev/null
+      trap "stty '$saved_tty' 2>/dev/null" EXIT
+    fi
+  fi
+
   # read -k 1 reads a single keypress; -u 0 forces stdin (important for subshells).
   if ! read -k 1 -u 0 key; then
     print >&2
