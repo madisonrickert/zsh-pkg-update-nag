@@ -100,16 +100,41 @@ Code, Copilot CLI, Cursor) editing the project.
 
 `README.md`'s Limitations section currently says "No self-update. To update
 the plugin itself, `git pull` inside its install directory." That's
-friction users won't bother with. Options:
+friction users won't bother with. Options, cheapest-first:
 
-- A periodic `git -C $_ZPUN_DIR pull --ff-only` gated by its own (longer)
-  rate-limit window — say every 7 days.
-- Or piggyback on the existing rate-limit window and pull during the same
-  scan that checks packages.
-- Either way: only do it when `$_ZPUN_DIR` is a git repo (skip for users
-  installed via `gem`/`brew`/`apt` style packaging where the dir is
-  immutable).
-- Notify the user when an update was pulled, so the change isn't silent.
+1. **Recommend [Pilaton/OhMyZsh-full-autoupdate](https://github.com/Pilaton/OhMyZsh-full-autoupdate)
+   in the README and ship nothing.** It already auto-updates every OMZ
+   plugin under `$ZSH_CUSTOM/plugins/` (including this one) on whatever
+   schedule the user configures. Zero added complexity here, and OMZ users
+   are probably already familiar with the pattern. Same applies to any
+   framework-specific plugin manager (zinit's `for $auto_update`,
+   antidote's bundle freshness, etc) — those users have a tool already.
+2. Build our own periodic `git -C $_ZPUN_DIR pull --ff-only` gated by a
+   longer rate-limit window (every 7 days). Only do it when `$_ZPUN_DIR`
+   is a git repo (skip immutable installs like brew/apt). Notify the user
+   when an update lands so the change isn't silent.
+
+Strong lean toward option 1 — solving plugin auto-update generically is
+already a solved problem in the OMZ ecosystem and we shouldn't reinvent
+it. Mention the recommendation in the README's "Limitations" or a new
+"Keeping the plugin updated" section.
+
+## Hook into oh-my-zsh's plugin update check
+
+OMZ already has a built-in upgrade flow (`omz update`, plus the
+`tools/check_for_upgrade.sh` nag) that knows how to update both the
+framework and any custom plugins under `$ZSH_CUSTOM/plugins/`. For users
+who installed via OMZ, that means *this* plugin gets pulled too — no
+self-update logic needed on our side.
+
+What we'd need: detect OMZ on plugin load (`[[ -n $ZSH ]] && [[ -d
+$ZSH/tools ]]`), suppress our own self-update path entirely in that case,
+and consider extending our `--check-env` output to surface the next OMZ
+upgrade window so users know plugin updates aren't being skipped.
+
+Sub-question: do we want to surface "your plugin is out of date" to OMZ
+users even though OMZ is going to handle the actual pull? Probably not —
+that'd duplicate noise. Leave the messaging entirely to OMZ.
 
 ## README polish pass
 

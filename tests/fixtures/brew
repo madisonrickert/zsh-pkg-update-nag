@@ -65,8 +65,11 @@ JSON
       first=$(printf '%s' "$arg" | cut -c1)
       case "$arg" in
         *@latest|blender|fxfactory|onyx|*-license-manager|*-product-manager|shutter-encoder)
+          # Casks report `.name` as an array of display strings and `.token`
+          # as the CLI identifier. We mirror that so .token matches the key
+          # the lookup uses.
           [ -z "$c_entries" ] || c_entries="$c_entries,"
-          c_entries="${c_entries}{\"name\":\"$arg\",\"ruby_source_path\":\"Casks/$first/$arg.rb\"}"
+          c_entries="${c_entries}{\"name\":[\"$arg display\"],\"token\":\"$arg\",\"ruby_source_path\":\"Casks/$first/$arg.rb\"}"
           ;;
         *)
           [ -z "$f_entries" ] || f_entries="$f_entries,"

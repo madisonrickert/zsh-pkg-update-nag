@@ -263,6 +263,31 @@ teardown() { teardown_env ; }
   [[ "$output" == *"OK"* ]]
 }
 
+@test "prefetch_brew handles many names via REST fallback (parallelism=4)" {
+  # Tests the unauth REST path: gh isn't on the test PATH, so prefetch_brew
+  # skips the GraphQL fast path and exercises the chunked subshell fan-out.
+  ZSH_PKG_UPDATE_NAG_LOOKUP_PARALLELISM=4 run run_plugin_zsh '
+    _zpun_min_age_prefetch_brew \
+      cmake 4.3.2 gh 2.62.0 fd 10.2.0 ffmpeg 8.1_1 deno 2.7.13 \
+      harfbuzz 14.2.0 nss 3.123.1 giflib 6.1.3 blender 5.1.1
+    print -r -- COUNT=$(_zpun_min_age_cache_count)
+  '
+  [ "$status" -eq 0 ]
+  # 9 names, all should land in cache (8 formulae + 1 cask).
+  [[ "$output" == *"COUNT=9"* ]]
+}
+
+@test "prefetch_brew with parallelism=1 still produces correct results" {
+  ZSH_PKG_UPDATE_NAG_LOOKUP_PARALLELISM=1 run run_plugin_zsh '
+    _zpun_min_age_prefetch_brew cmake 4.3.2 gh 2.62.0 fd 10.2.0
+    print -r -- COUNT=$(_zpun_min_age_cache_count)
+    _zpun_min_age_cache_get brew gh 2.62.0
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"COUNT=3"* ]]
+  [[ "$output" == *"1579091696"* ]]
+}
+
 # ---------------------------------------------------------------------------
 # End-to-end: a fresh fixture timestamp causes the row to be dropped
 # ---------------------------------------------------------------------------

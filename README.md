@@ -136,6 +136,8 @@ zsh_pkg_update_nag_min_age_days=0
 | `ZSH_PKG_UPDATE_NAG_SSH=1` | Opt in under SSH sessions (default: skipped). |
 | `ZSH_PKG_UPDATE_NAG_DEBUG=1` | Append diagnostics to `$XDG_STATE_HOME/zsh-pkg-update-nag/debug.log`. |
 | `ZSH_PKG_UPDATE_NAG_PROVIDER_TIMEOUT` | Per-provider timeout in seconds (default `10`). |
+| `ZSH_PKG_UPDATE_NAG_LOOKUP_PARALLELISM` | Concurrency for the brew min-age REST fallback (default `6`). Only applies when neither `gh` nor `$GITHUB_TOKEN` is available — otherwise the GraphQL fast path is one round trip regardless. |
+| `GITHUB_TOKEN` | If set, the brew min-age prefetch uses GraphQL via `curl` with this token (5000/hr). Picked up automatically when `gh` isn't installed. |
 | `ZSH_PKG_UPDATE_NAG_CONFIG` | Override config file path. |
 | `NO_COLOR=1` | Disable color output (respected per the [NO_COLOR](https://no-color.org) spec). |
 
@@ -186,18 +188,22 @@ If your package manager has minimum-release-age built in, use **that** for those
 
 Each outdated package needs one publish-date lookup the first time it's seen. Lookups are cached forever in `$XDG_STATE_HOME/zsh-pkg-update-nag/age_cache.tsv` (publish dates don't change), so steady-state cost is near-zero — most users see ~95% cache hits after a day or two of use.
 
-| Manager | Lookup source | Cold-cache cost per package |
+| Manager | Lookup source | Cold-cache cost |
 |---|---|---|
-| brew | One batched `brew info --json=v2` for the file paths, then GitHub commits API per package on `Homebrew/homebrew-{core,cask}` (uses `gh` if installed, else `curl`) | ~1 s per package (the `brew info` call is a single fixed ~1 s regardless of count) |
-| npm | `npm view <pkg> time --json` + `jq` | ~350–650 ms (network) |
-| uv | `https://pypi.org/pypi/<pkg>/json` via `curl` + `jq` | ~100–300 ms (network) |
-| gem | `https://rubygems.org/api/v1/versions/<pkg>.json` via `curl` + `jq` | ~100–300 ms (network) |
+| brew | One batched `brew info --json=v2` for the file paths (~1.2 s fixed), then a single GitHub GraphQL query covering every package via `gh api graphql` (uses your `gh` token, 5000/hr quota) or `curl` with `$GITHUB_TOKEN`. Falls back to per-package serial REST when neither is available (60/hr unauth quota). | ~3 s for any number of packages on the fast path; ~N seconds on the unauth REST fallback |
+| npm | `npm view <pkg> time --json` + `jq` | ~350–650 ms (network) per package |
+| uv | `https://pypi.org/pypi/<pkg>/json` via `curl` + `jq` | ~100–300 ms (network) per package |
+| gem | `https://rubygems.org/api/v1/versions/<pkg>.json` via `curl` + `jq` | ~100–300 ms (network) per package |
 
-Worst-case impact on shell startup: cold cache + 35 outdated brew packages = roughly 40 s of extra latency. **Run with `ZSH_PKG_UPDATE_NAG_BACKGROUND=1` if you enable this** — the scan moves off the startup path entirely and the latency becomes invisible. Each provider call is also wrapped by the existing `ZSH_PKG_UPDATE_NAG_PROVIDER_TIMEOUT` (default 10 s) so a hung HTTP request can never extend startup beyond that cap. If a single manager is too slow for synchronous use, set its per-manager override to `0` to disable the lookup for it specifically.
+Measured: cold cache, 35 outdated brew packages, with `gh` authenticated → **~7 s** total cold-cache cost for the whole scan (down from ~77 s before the prefetch + GraphQL changes). Steady state with cache populated: ~3–4 s regardless of N. **Run with `ZSH_PKG_UPDATE_NAG_BACKGROUND=1` if you enable this** — the scan moves off the startup path entirely and the latency becomes invisible. Each provider call is also wrapped by the existing `ZSH_PKG_UPDATE_NAG_PROVIDER_TIMEOUT` (default 10 s) so a hung HTTP request can never extend startup beyond that cap. If a single manager is too slow for synchronous use, set its per-manager override to `0` to disable the lookup for it specifically.
 
 ###### GitHub rate limit (brew only)
 
-The brew lookup hits the GitHub commits API. Without `gh`, the limit is **60 requests/hour per IP** (unauthenticated) — enough for ~30–60 unique brew packages per hour. With `gh` installed *and* `gh auth login` completed, the limit jumps to **5000/hour**, which is effectively unbounded for normal use. If you're running min-age for brew, installing `gh` is strongly recommended.
+The brew lookup hits the GitHub API. There are three auth paths, in order of preference:
+
+1. **`gh` CLI installed and authenticated** (`gh auth login`) — uses GitHub's GraphQL API in a single batched call per scan; 5000/hour quota. **Strongly recommended** if you're enabling brew min-age.
+2. **`$GITHUB_TOKEN` set in the environment** — same GraphQL fast path via `curl`; same 5000/hour quota. Useful when you don't use `gh` but already have a token (CI, scripts, etc.).
+3. **No auth** — falls back to per-package REST calls against the public 60/hour cap. Enough for ~30–60 unique brew packages per hour; the lookup fails-open once exhausted (the update gets shown anyway and a debug-log line records why).
 
 ##### Failure mode: fail-open
 
@@ -255,7 +261,7 @@ Nothing happens on shell start?
 ## Requirements
 
 - **zsh** 5.0 or newer.
-- **Optional:** `jq` (improves Homebrew version-delta display — without it, brew versions show as `?`; also required for any `min_age_days > 0` lookup), `curl` (required for `min_age_days > 0` on brew/uv/gem; ships in `/usr/bin/curl` on macOS and most Linuxes), [`gh`](https://cli.github.com/) (raises brew's GitHub API rate limit from 60/hour to 5000/hour; strongly recommended if you set `min_age_days > 0` for brew), `timeout` / `gtimeout` (wraps provider calls with a 10s timeout). On macOS, `gtimeout` is part of `coreutils`: `brew install coreutils`.
+- **Optional:** `jq` (improves Homebrew version-delta display — without it, brew versions show as `?`; also required for any `min_age_days > 0` lookup), `curl` (required for `min_age_days > 0` on brew/uv/gem; ships in `/usr/bin/curl` on macOS and most Linuxes), [`gh`](https://cli.github.com/) (enables the GraphQL fast path for brew min-age, batching all packages into a single API call; strongly recommended if you set `min_age_days > 0` for brew — alternatively set `$GITHUB_TOKEN` and the same path runs via `curl`), `timeout` / `gtimeout` (wraps provider calls with a 10s timeout). On macOS, `gtimeout` is part of `coreutils`: `brew install coreutils`.
 
 ## Limitations / roadmap
 
