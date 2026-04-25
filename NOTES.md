@@ -142,14 +142,6 @@ Whole-document readability sweep — the doc has grown organically as
 features land and could benefit from a fresh read for ordering, redundancy,
 and tone. No specific fix; flagged for a deliberate revision.
 
-## Drop non-global package managers from the roadmap
-
-The "Limitations / roadmap" section in `README.md` mentions Bun/Deno
-globals as a future direction, but those tools' `outdated` commands only
-operate on project deps — outside this plugin's "global tools at shell
-startup" scope by design. Remove the entry rather than carry it as a
-phantom roadmap item.
-
 ## Lazy-source provider files
 
 `zsh-pkg-update-nag.plugin.zsh` sources `lib/providers/{brew,npm,uv,gem}.zsh`

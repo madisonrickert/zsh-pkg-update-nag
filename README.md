@@ -265,7 +265,6 @@ Nothing happens on shell start?
 
 ## Limitations / roadmap
 
-- **Bun and Deno globals aren't supported yet.** Both `bun outdated` and `deno outdated` currently only operate on project dependencies, not globally-installed tools. Will add once upstream supports global mode.
 - **No self-update.** To update the plugin itself, `git pull` inside its install directory.
 
 ## Contributing
