@@ -1,5 +1,6 @@
 # zsh-pkg-update-nag
 
+[![CI](https://github.com/madisonrickert/zsh-pkg-update-nag/actions/workflows/ci.yml/badge.svg)](https://github.com/madisonrickert/zsh-pkg-update-nag/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Shell: zsh](https://img.shields.io/badge/shell-zsh%205%2B-green)](https://www.zsh.org/)
 [![Platforms: macOS | Linux](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey)]()
