@@ -67,10 +67,13 @@ _zpun_rate_limit_release_lock() {
   rmdir "$(_zpun_rate_limit_lock_path)" 2>/dev/null
 }
 
-# _zpun_mtime <path> — portable mtime-in-seconds lookup. macOS stat is BSD; GNU
-# coreutils stat is only available via `gstat`. Fall back to perl.
+# _zpun_mtime <path> — portable mtime-in-seconds lookup. BSD stat (macOS) uses
+# `-f %m`; GNU stat (Linux) uses `-c %Y`. We validate the result is purely
+# numeric before accepting it: GNU stat treats `-f` as "filesystem info mode"
+# and emits multi-line garbage on stdout, which would otherwise be returned as
+# a bogus mtime. Fall back to perl.
 #
-# NB: do NOT name the local variable `path` — zsh ties scalar `$path` to the
+# NB: do NOT name the local variable `path`. zsh ties scalar `$path` to the
 # `$PATH` array, so shadowing it inside a function breaks every subsequent
 # external command lookup in that function body.
 _zpun_mtime() {
@@ -80,11 +83,11 @@ _zpun_mtime() {
   local target=$1
   local result
 
-  if result=$(stat -f %m "$target" 2>/dev/null) && [[ -n $result ]]; then
+  if result=$(stat -f %m "$target" 2>/dev/null) && [[ $result == <-> ]]; then
     print -r -- "$result"
     return
   fi
-  if result=$(stat -c %Y "$target" 2>/dev/null) && [[ -n $result ]]; then
+  if result=$(stat -c %Y "$target" 2>/dev/null) && [[ $result == <-> ]]; then
     print -r -- "$result"
     return
   fi

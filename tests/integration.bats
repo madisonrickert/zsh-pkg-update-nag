@@ -74,9 +74,14 @@ teardown() { teardown_env ; }
       _zpun_collect_outdated
     "
   [ "$status" -eq 0 ]
-  [[ "$output" != *$'npm\t'* ]]
-  [[ "$output" != *$'uv\t'* ]]
-  [[ "$output" != *$'gem\t'* ]]
+  # Anchor on line-start: `npm\t` is also a substring of `pnpm\t`, so an
+  # unanchored pattern would always match and never actually verify filtering.
+  local re=$'(^|\n)npm\t'
+  [[ ! "$output" =~ $re ]]
+  re=$'(^|\n)uv\t'
+  [[ ! "$output" =~ $re ]]
+  re=$'(^|\n)gem\t'
+  [[ ! "$output" =~ $re ]]
   [[ "$output" == *$'brew\tgh\t'* ]]   # brew is unfiltered (no min_age_brew set)
 }
 

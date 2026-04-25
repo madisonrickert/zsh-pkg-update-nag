@@ -29,9 +29,12 @@ teardown() { teardown_env ; }
   run_plugin_zsh "_zpun_rate_limit_stamp"
   local stamp="$XDG_STATE_HOME/zsh-pkg-update-nag/last_check"
   touch -t 202001010000 "$stamp"
-  local before=$(stat -f %m "$stamp" 2>/dev/null || stat -c %Y "$stamp")
+  # GNU stat (Linux) doesn't error on `-f %m`; it interprets `-f` as
+  # "filesystem info" and prints a multi-line dump, so the OR never triggers.
+  # Use the GNU form first and let BSD stat (macOS) be the fallback.
+  local before=$(stat -c %Y "$stamp" 2>/dev/null || stat -f %m "$stamp")
   run_plugin_zsh "_zpun_rate_limit_stamp"
-  local after=$(stat -f %m "$stamp" 2>/dev/null || stat -c %Y "$stamp")
+  local after=$(stat -c %Y "$stamp" 2>/dev/null || stat -f %m "$stamp")
   [ "$after" -gt "$before" ]
 }
 
