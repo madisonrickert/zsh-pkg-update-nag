@@ -247,6 +247,12 @@ _zpun_ui_print_env() {
   emulate -L zsh
   setopt local_options
 
+  # min-age helpers are normally lazy-loaded only when the feature is on,
+  # but --check-env should report cache state accurately even when min-age
+  # is currently disabled (the cache file may persist from prior config).
+  # Latency doesn't matter here — this is a manual diagnostic command.
+  (( $+functions[_zpun_min_age_threshold] )) || source "$_ZPUN_DIR/lib/min_age.zsh"
+
   local stamp=$(_zpun_rate_limit_stamp_path)
   local stamp_status="absent (will init on next shell)"
   if [[ -e $stamp ]]; then

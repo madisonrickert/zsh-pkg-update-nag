@@ -44,12 +44,14 @@ run_plugin_zsh() {
     ZSH_PKG_UPDATE_NAG_NO_AUTORUN=1 \
     zsh -c "
       source '$ZPUN_PLUGIN_ROOT/zsh-pkg-update-nag.plugin.zsh'
-      # The plugin no longer sources providers at load (they're sourced lazily
-      # inside _zpun_collect_outdated's per-manager subshell). Tests that call
-      # _zpun_provider_<m> directly need them in the current shell.
+      # The plugin no longer sources providers or min_age at load — they're
+      # loaded on demand by _zpun_collect_outdated. Tests that call
+      # _zpun_provider_<m> or _zpun_min_age_* directly need them present in
+      # the current shell, so we source them eagerly here.
       for _zpun_test_provider in '$ZPUN_PLUGIN_ROOT'/lib/providers/*.zsh; do
         source \"\$_zpun_test_provider\"
       done
+      source '$ZPUN_PLUGIN_ROOT/lib/min_age.zsh'
       _zpun_config_load
       $1
     "

@@ -11,11 +11,13 @@ fpath=("$_ZPUN_DIR" $fpath)
 source "$_ZPUN_DIR/lib/config.zsh"
 source "$_ZPUN_DIR/lib/rate_limit.zsh"
 source "$_ZPUN_DIR/lib/ui.zsh"
-source "$_ZPUN_DIR/lib/min_age.zsh"
-# Provider files (lib/providers/*.zsh) are intentionally NOT sourced here.
-# _zpun_collect_outdated re-sources the relevant one inside its per-manager
-# timeout subshell, which is the only context that calls them — sourcing them
-# at plugin load is a few ms wasted on every shell startup.
+# lib/min_age.zsh is sourced lazily by _zpun_collect_outdated (and by
+# _zpun_ui_print_env for accurate diagnostics) only when the feature is
+# enabled — it carries ~0.7 ms of source-time cost on a typical shell
+# and the feature is off by default.
+# Provider files (lib/providers/*.zsh) are intentionally NOT sourced here
+# either. _zpun_collect_outdated re-sources the relevant one inside its
+# per-manager timeout subshell, which is the only context that calls them.
 
 # _zpun_should_run — returns 0 if the current environment is a good place to nag.
 # Honors ZSH_PKG_UPDATE_NAG_DISABLE unconditionally; skips environmental guards
@@ -39,6 +41,28 @@ _zpun_should_run() {
   return 0
 }
 
+# _zpun_min_age_active — 0 if min-age gating is enabled for at least one
+# manager, 1 otherwise. Mirrors the inheritance rule of
+# _zpun_min_age_threshold (per-manager override wins over the global,
+# even when the override is 0) without needing lib/min_age.zsh loaded —
+# the answer is what tells us whether sourcing it is worthwhile.
+_zpun_min_age_active() {
+  emulate -L zsh
+  setopt local_options
+
+  local m override_var t
+  for m in brew npm uv gem; do
+    override_var="zsh_pkg_update_nag_min_age_${m}"
+    if (( ${(P)+override_var} )); then
+      t=${(P)override_var:-0}
+    else
+      t=${zsh_pkg_update_nag_min_age:-0}
+    fi
+    (( t > 0 )) && return 0
+  done
+  return 1
+}
+
 # _zpun_collect_outdated — runs each enabled provider with a timeout and
 # aggregates their TSV output into an array. Lines: manager\tname\tcurrent\tlatest.
 _zpun_collect_outdated() {
@@ -48,6 +72,14 @@ _zpun_collect_outdated() {
   local manager provider_fn result line pkg_name pkg_latest threshold
   local -a timeout_cmd outdated_rows prefetch_args
   timeout_cmd=( ${(z)"$(_zpun_timeout_prefix)"} )
+
+  # Source min-age helpers on demand. When the feature is fully off (the
+  # default), we skip the whole file and the per-row gating below.
+  local _have_min_age=0
+  if _zpun_min_age_active; then
+    source "$_ZPUN_DIR/lib/min_age.zsh"
+    _have_min_age=1
+  fi
 
   for manager in brew npm uv gem; do
     _zpun_manager_enabled "$manager" || continue
@@ -67,19 +99,23 @@ _zpun_collect_outdated() {
       # Prefetch publish-date lookups in one batch when min-age is on for
       # this manager — the per-row _zpun_min_age_satisfied calls below then
       # see cache hits instead of going to brew/npm/curl one by one.
-      threshold=$(_zpun_min_age_threshold "$manager")
-      if (( threshold > 0 )); then
-        prefetch_args=()
-        for line in "${outdated_rows[@]}"; do
-          prefetch_args+=( "${line%%$'\t'*}" "${line##*$'\t'}" )
-        done
-        _zpun_min_age_prefetch "$manager" "${prefetch_args[@]}"
+      if (( _have_min_age )); then
+        threshold=$(_zpun_min_age_threshold "$manager")
+        if (( threshold > 0 )); then
+          prefetch_args=()
+          for line in "${outdated_rows[@]}"; do
+            prefetch_args+=( "${line%%$'\t'*}" "${line##*$'\t'}" )
+          done
+          _zpun_min_age_prefetch "$manager" "${prefetch_args[@]}"
+        fi
       fi
 
       for line in "${outdated_rows[@]}"; do
         pkg_name=${line%%$'\t'*}
         pkg_latest=${line##*$'\t'}
-        _zpun_min_age_satisfied "$manager" "$pkg_name" "$pkg_latest" || continue
+        if (( _have_min_age )); then
+          _zpun_min_age_satisfied "$manager" "$pkg_name" "$pkg_latest" || continue
+        fi
         print -r -- "${manager}"$'\t'"${line}"
       done
     else
