@@ -270,3 +270,134 @@ _WAIT_STAMP='
   [ "$status" -eq 0 ]
   [[ "$output" == *"REMOVED"* ]]
 }
+
+# ---------------------------------------------------------------------------
+# powerlevel10k instant-prompt compatibility
+#
+# When p10k instant-prompt is active, output during the first precmd can
+# corrupt the pre-prompt buffer. _zpun_precmd_nag must:
+#   - suppress the "(checking…)" notice (cosmetic loss),
+#   - defer the first results-display call by one precmd so the print lands
+#     after p10k finalizes regardless of hook registration order.
+# ---------------------------------------------------------------------------
+
+@test "_zpun_p10k_instant_prompt_active is false when var is unset" {
+  run run_plugin_zsh "
+    unset POWERLEVEL9K_INSTANT_PROMPT
+    _zpun_p10k_instant_prompt_active && echo ACTIVE || echo INACTIVE
+  "
+  [[ "$output" == *"INACTIVE"* ]]
+}
+
+@test "_zpun_p10k_instant_prompt_active is false when var=off" {
+  run run_plugin_zsh "
+    POWERLEVEL9K_INSTANT_PROMPT=off
+    _zpun_p10k_instant_prompt_active && echo ACTIVE || echo INACTIVE
+  "
+  [[ "$output" == *"INACTIVE"* ]]
+}
+
+@test "_zpun_p10k_instant_prompt_active is true for quiet" {
+  run run_plugin_zsh "
+    POWERLEVEL9K_INSTANT_PROMPT=quiet
+    _zpun_p10k_instant_prompt_active && echo ACTIVE || echo INACTIVE
+  "
+  [[ "$output" == *"ACTIVE"* ]]
+}
+
+@test "_zpun_p10k_instant_prompt_active is true for verbose" {
+  run run_plugin_zsh "
+    POWERLEVEL9K_INSTANT_PROMPT=verbose
+    _zpun_p10k_instant_prompt_active && echo ACTIVE || echo INACTIVE
+  "
+  [[ "$output" == *"ACTIVE"* ]]
+}
+
+@test "_zpun_precmd_nag suppresses checking notice under p10k instant-prompt" {
+  run run_plugin_zsh "
+    NO_COLOR=1
+    POWERLEVEL9K_INSTANT_PROMPT=quiet
+    typeset -g _ZPUN_PRECMD_ANNOUNCED=1
+    _zpun_precmd_nag
+  "
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"checking for package updates"* ]]
+}
+
+@test "_zpun_precmd_nag prints checking notice when POWERLEVEL9K_INSTANT_PROMPT=off" {
+  run run_plugin_zsh "
+    NO_COLOR=1
+    POWERLEVEL9K_INSTANT_PROMPT=off
+    typeset -g _ZPUN_PRECMD_ANNOUNCED=1
+    _zpun_precmd_nag
+  "
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"checking for package updates"* ]]
+}
+
+@test "_zpun_precmd_nag defers first call under p10k when pending exists" {
+  run run_plugin_zsh "
+    NO_COLOR=1
+    POWERLEVEL9K_INSTANT_PROMPT=quiet
+    local pending=\$(_zpun_pending_path)
+    mkdir -p \${pending:h}
+    print -r -- 'ok' > \$pending
+    typeset -g _ZPUN_PRECMD_ANNOUNCED=1
+    precmd_functions+=(_zpun_precmd_nag)
+    _zpun_precmd_nag
+    [[ -e \$pending ]] && echo PENDING_KEPT || echo PENDING_GONE
+    (( \${precmd_functions[(I)_zpun_precmd_nag]} )) && echo HOOK_KEPT || echo HOOK_REMOVED
+  "
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"All packages up to date"* ]]
+  [[ "$output" == *"PENDING_KEPT"* ]]
+  [[ "$output" == *"HOOK_KEPT"* ]]
+}
+
+@test "_zpun_precmd_nag processes pending on second call after p10k defer" {
+  run run_plugin_zsh "
+    NO_COLOR=1
+    POWERLEVEL9K_INSTANT_PROMPT=quiet
+    local pending=\$(_zpun_pending_path)
+    mkdir -p \${pending:h}
+    print -r -- 'ok' > \$pending
+    typeset -g _ZPUN_PRECMD_ANNOUNCED=1
+    precmd_functions+=(_zpun_precmd_nag)
+    _zpun_precmd_nag
+    _zpun_precmd_nag
+    [[ -e \$pending ]] && echo PENDING_KEPT || echo PENDING_GONE
+    (( \${precmd_functions[(I)_zpun_precmd_nag]} )) && echo HOOK_KEPT || echo HOOK_REMOVED
+  "
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"All packages up to date"* ]]
+  [[ "$output" == *"PENDING_GONE"* ]]
+  [[ "$output" == *"HOOK_REMOVED"* ]]
+}
+
+@test "_zpun_precmd_nag does not defer when POWERLEVEL9K_INSTANT_PROMPT=off" {
+  run run_plugin_zsh "
+    NO_COLOR=1
+    POWERLEVEL9K_INSTANT_PROMPT=off
+    local pending=\$(_zpun_pending_path)
+    mkdir -p \${pending:h}
+    print -r -- 'ok' > \$pending
+    typeset -g _ZPUN_PRECMD_ANNOUNCED=1
+    _zpun_precmd_nag
+  "
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"All packages up to date"* ]]
+}
+
+@test "_zpun_main_deferred sets ANNOUNCED on orphaned-pending branch" {
+  run run_plugin_zsh "
+    _zpun_should_run() { return 0 }
+    local pending=\$(_zpun_pending_path)
+    mkdir -p \${pending:h}
+    print -r -- 'ok' > \$pending
+    _zpun_rate_limit_stamp
+    _zpun_main_deferred
+    (( \${+_ZPUN_PRECMD_ANNOUNCED} )) && echo SET || echo UNSET
+  "
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"SET"* ]]
+}

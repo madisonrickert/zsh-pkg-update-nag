@@ -189,6 +189,21 @@ _zpun_main() {
   trap - INT TERM EXIT
 }
 
+# _zpun_p10k_instant_prompt_active — 0 if powerlevel10k instant-prompt is
+# enabled in any non-"off" mode (quiet | verbose). Output during the
+# instant-prompt phase corrupts p10k's pre-prompt buffer (the "Console
+# output during zsh initialization detected" warning), so callers must
+# either suppress that output (cosmetic notices) or defer it past p10k's
+# first precmd, which finalizes the buffer.
+_zpun_p10k_instant_prompt_active() {
+  emulate -L zsh
+  setopt local_options
+  case ${POWERLEVEL9K_INSTANT_PROMPT:-} in
+    ''|off) return 1 ;;
+    *)      return 0 ;;
+  esac
+}
+
 # _zpun_precmd_nag — one-shot precmd hook registered by _zpun_main_deferred.
 #
 # Pending file format (written atomically by the background subshell):
@@ -199,24 +214,44 @@ _zpun_main() {
 # The hook prints a one-shot "checking…" notice at the first prompt while the
 # scan is still running, then waits silently. When the pending file appears it
 # acts on its content and removes itself.
+#
+# _ZPUN_PRECMD_ANNOUNCED is set by _zpun_main_deferred when this hook is
+# registered, and we capture-and-clear it here as a "first call" sentinel.
+# It drives both the one-shot "(checking…)" notice and the p10k deferral
+# below — both only matter on the very first invocation.
 _zpun_precmd_nag() {
   emulate -L zsh
   setopt local_options
 
   local pending=$(_zpun_pending_path)
 
+  local first_call=0
+  if (( ${+_ZPUN_PRECMD_ANNOUNCED} )); then
+    first_call=1
+    unset _ZPUN_PRECMD_ANNOUNCED
+  fi
+
   if [[ ! -e $pending ]]; then
-    # Scan still running. Print a one-shot notice at the very first prompt so
-    # the user knows something is happening, then wait silently.
-    if (( ${+_ZPUN_PRECMD_ANNOUNCED} )); then
-      unset _ZPUN_PRECMD_ANNOUNCED
+    # Scan still running. Print a one-shot notice on the first prompt so the
+    # user knows something is happening, then wait silently. Suppress under
+    # p10k instant-prompt — printing during the instant-prompt phase corrupts
+    # the prompt buffer. Cosmetic loss only.
+    if (( first_call )) && ! _zpun_p10k_instant_prompt_active; then
       _zpun_ui_info "(checking for package updates in the background…)"
     fi
     return 0
   fi
 
+  # Pending file exists. Under p10k instant-prompt, the first precmd may run
+  # BEFORE p10k finalizes its pre-prompt buffer (depends on hook registration
+  # order — our hook can be registered before p10k's, since users commonly
+  # source ~/.p10k.zsh after loading plugins). Defer one precmd: by the
+  # second call p10k has finalized regardless of order.
+  if (( first_call )) && _zpun_p10k_instant_prompt_active; then
+    return 0
+  fi
+
   precmd_functions=( ${precmd_functions:#_zpun_precmd_nag} )
-  unset _ZPUN_PRECMD_ANNOUNCED
 
   local content
   content=$(<"$pending")
@@ -251,8 +286,13 @@ _zpun_main_deferred() {
 
   # If a previous shell's background scan left results waiting, register the
   # hook to display them even if the rate limit isn't due for a new scan.
+  # _ZPUN_PRECMD_ANNOUNCED is the "first call" sentinel for _zpun_precmd_nag;
+  # set it here too so the p10k deferral path applies on the orphaned
+  # branch (the "(checking…)" notice naturally won't fire because pending
+  # already exists).
   local pending=$(_zpun_pending_path)
   if [[ -e $pending ]]; then
+    typeset -g _ZPUN_PRECMD_ANNOUNCED=1
     precmd_functions+=(_zpun_precmd_nag)
     return 0
   fi

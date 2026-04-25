@@ -158,6 +158,15 @@ What you'll see:
 
 Results are written atomically to `$XDG_STATE_HOME/zsh-pkg-update-nag/pending_updates` and consumed once displayed. If you open several shells at once, the rate-limit lock ensures only one background scan runs; subsequent shells will pick up the same results when their first prompt fires.
 
+##### powerlevel10k instant-prompt
+
+If you use [powerlevel10k](https://github.com/romkatv/powerlevel10k) with instant-prompt enabled (`POWERLEVEL9K_INSTANT_PROMPT=quiet|verbose`), the plugin auto-adapts:
+
+- The dim "(checking…)" notice is **suppressed** to avoid p10k's "Console output during zsh initialization detected" warning. (Cosmetic loss only — results still appear once the scan finishes.)
+- The results display is **deferred by one prompt** so it lands after p10k finalizes its instant-prompt buffer, regardless of whether our precmd hook is registered before or after p10k's.
+
+No action needed — set `POWERLEVEL9K_INSTANT_PROMPT=off` (or leave it unset) to opt out.
+
 #### Minimum release age (`zsh_pkg_update_nag_min_age`)
 
 Optional supply-chain safety net. When set to N > 0, an update is only surfaced once its `latest` version has been published for at least N days — fresh releases get a quarantine window during which yanked or compromised versions usually surface and get pulled. Off by default (`0`).
