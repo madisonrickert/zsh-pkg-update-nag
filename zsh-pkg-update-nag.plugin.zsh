@@ -210,10 +210,12 @@ _zpun_main_deferred() {
     local _state_dir=$(_zpun_state_dir)
     [[ -d $_state_dir ]] || mkdir -p "$_state_dir" 2>/dev/null
 
-    # Always write the pending file on exit so _zpun_precmd_nag has a reliable
-    # "done" signal. The successful path writes it via mv below; the trap is the
-    # fallback for errors and signals (writes "err" so the hook can distinguish
-    # a crash from a clean "no updates" result).
+    # Invariant: the pending file MUST exist when this subshell exits, so
+    # _zpun_precmd_nag has a reliable "done" signal. The trap enforces that on
+    # every exit path — signal, mid-scan crash, or silent failure of the mv
+    # below (e.g. read-only XDG_STATE_HOME, ENOSPC). The `[[ -e ]]` guard makes
+    # it a no-op when the happy path already wrote pending; that's why we
+    # don't clear the trap before exit.
     trap '_zpun_rate_limit_release_lock; [[ -e "$_pending" ]] || print -r -- "err" > "$_pending"; rm -f "$_tmp"' INT TERM EXIT
 
     local results
@@ -227,7 +229,6 @@ _zpun_main_deferred() {
 
     _zpun_rate_limit_stamp
     _zpun_rate_limit_release_lock
-    trap - INT TERM EXIT
   ) 2>>"$(_zpun_debug_log_path)" &!
 
   typeset -g _ZPUN_PRECMD_ANNOUNCED=1

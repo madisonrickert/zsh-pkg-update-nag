@@ -54,6 +54,26 @@ _WAIT_STAMP='
   [[ "$output" == *$'npm\tpnpm\t9.0.0\t9.5.1'* ]]
 }
 
+# Regression: if the mv that finalizes the pending file fails silently (e.g.
+# read-only XDG_STATE_HOME or ENOSPC), the EXIT trap must still write the 'err'
+# sentinel so _zpun_precmd_nag has a "done" signal and can deregister itself.
+# Pre-fix code cleared the trap before exit (`trap - INT TERM EXIT`), so a
+# silent mv failure left no pending file and the precmd hook polled forever.
+@test "background scan writes 'err' when mv fails silently (trap is the exit invariant)" {
+  ZPUN_FIXTURE_BREW=empty ZPUN_FIXTURE_NPM=empty ZPUN_FIXTURE_UV=empty \
+    run run_plugin_zsh "
+      _zpun_should_run() { return 0 }
+      # zsh subshells inherit function definitions, so this overrides the mv
+      # call inside the background subshell launched by _zpun_main_deferred.
+      mv() { return 1 }
+      _zpun_main_deferred
+      ${_WAIT_PENDING}
+      cat \$(_zpun_pending_path)
+    "
+  [ "$status" -eq 0 ]
+  [ "$output" = "err" ]
+}
+
 # ---------------------------------------------------------------------------
 # Background subshell: rate-limit housekeeping
 # ---------------------------------------------------------------------------
