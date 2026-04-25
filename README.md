@@ -80,7 +80,7 @@ exec zsh
 
 ### Verify it worked
 
-Open a fresh terminal. In the default (synchronous) mode the check runs before your first prompt — if anything is outdated you'll see the update prompt; if nothing's outdated the shell is silent. In background mode (`ZSH_PKG_UPDATE_NAG_BACKGROUND=1`) a dim `(checking…)` notice appears at the first prompt and results follow once the scan finishes.
+Open a fresh terminal. The scan runs in the background (default), so your prompt appears immediately; a dim `(checking…)` notice flashes at the first prompt while the scan is in flight, then results land in place — either the update prompt or `All packages up to date.` — before your next prompt. Set `ZSH_PKG_UPDATE_NAG_BACKGROUND=0` to run synchronously instead (mainly useful when debugging).
 
 Confirm detected managers and the computed config any time with:
 
@@ -131,7 +131,7 @@ zsh_pkg_update_nag_min_age=0
 | Variable | Purpose |
 |---|---|
 | `ZSH_PKG_UPDATE_NAG_DISABLE=1` | Disable the plugin entirely (no check on shell start). |
-| `ZSH_PKG_UPDATE_NAG_BACKGROUND=1` | Run the scan in the background so plugin load returns instantly (see below). |
+| `ZSH_PKG_UPDATE_NAG_BACKGROUND` | `1` (default) runs the scan in the background so plugin load returns instantly; `0` runs it synchronously at shell load (mainly useful when debugging). See below. |
 | `ZSH_PKG_UPDATE_NAG_FORCE=1` | Ignore the rate-limit for this shell. |
 | `ZSH_PKG_UPDATE_NAG_SSH=1` | Opt in under SSH sessions (default: skipped). |
 | `ZSH_PKG_UPDATE_NAG_DEBUG=1` | Append diagnostics to `$XDG_STATE_HOME/zsh-pkg-update-nag/debug.log`. |
@@ -141,20 +141,20 @@ zsh_pkg_update_nag_min_age=0
 | `ZSH_PKG_UPDATE_NAG_CONFIG` | Override config file path. |
 | `NO_COLOR=1` | Disable color output (respected per the [NO_COLOR](https://no-color.org) spec). |
 
-#### Background mode (`ZSH_PKG_UPDATE_NAG_BACKGROUND=1`)
+#### Background mode (default)
 
-By default the plugin scans synchronously at shell startup and blocks until all providers have responded. Setting this variable makes the scan run in a background process instead, so your shell prompt appears immediately.
-
-```zsh
-# ~/.zshrc (before the plugin loads)
-export ZSH_PKG_UPDATE_NAG_BACKGROUND=1
-```
-
-What you'll see:
+The scan runs in a background subshell so plugin load returns immediately and shell startup stays snappy. What you'll see at the next interactive shell:
 
 - **First prompt** — a dim notice `(checking for package updates in the background…)` appears once while the scan is in flight.
 - **When the scan finishes** (before your next prompt) — either the normal update prompt, or `All packages up to date.` if nothing needs upgrading.
 - **`--now`** always runs synchronously regardless of this setting, so progress output remains visible.
+
+To opt into the synchronous path (mainly useful when debugging), set:
+
+```zsh
+# ~/.zshrc (before the plugin loads)
+export ZSH_PKG_UPDATE_NAG_BACKGROUND=0
+```
 
 Results are written atomically to `$XDG_STATE_HOME/zsh-pkg-update-nag/pending_updates` and consumed once displayed. If you open several shells at once, the rate-limit lock ensures only one background scan runs; subsequent shells will pick up the same results when their first prompt fires.
 
@@ -204,7 +204,7 @@ Each outdated package needs one publish-date lookup the first time it's seen. Lo
 | uv | `https://pypi.org/pypi/<pkg>/json` via `curl` + `jq` | ~100–300 ms (network) per package |
 | gem | `https://rubygems.org/api/v1/versions/<pkg>.json` via `curl` + `jq` | ~100–300 ms (network) per package |
 
-Measured: cold cache, 35 outdated brew packages, with `gh` authenticated → **~7 s** total cold-cache cost for the whole scan (down from ~77 s before the prefetch + GraphQL changes). Steady state with cache populated: ~3–4 s regardless of N. **Run with `ZSH_PKG_UPDATE_NAG_BACKGROUND=1` if you enable this** — the scan moves off the startup path entirely and the latency becomes invisible. Each provider call is also wrapped by the existing `ZSH_PKG_UPDATE_NAG_PROVIDER_TIMEOUT` (default 10 s) so a hung HTTP request can never extend startup beyond that cap. If a single manager is too slow for synchronous use, set its per-manager override to `0` to disable the lookup for it specifically.
+Measured: cold cache, 35 outdated brew packages, with `gh` authenticated → **~7 s** total cold-cache cost for the whole scan (down from ~77 s before the prefetch + GraphQL changes). Steady state with cache populated: ~3–4 s regardless of N. Background mode (the default) keeps that latency entirely off the startup path, so you only feel it as a delay before results appear at the prompt. Each provider call is also wrapped by the existing `ZSH_PKG_UPDATE_NAG_PROVIDER_TIMEOUT` (default 10 s) so a hung HTTP request can never extend the scan beyond that cap. If a single manager is too slow even in the background, set its per-manager override to `0` to disable the lookup for it specifically.
 
 ###### GitHub rate limit (brew only)
 

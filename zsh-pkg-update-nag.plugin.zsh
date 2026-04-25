@@ -276,7 +276,8 @@ _zpun_precmd_nag() {
 # _zpun_main_deferred — background variant of _zpun_main. Launches the scan in
 # a background subshell (so plugin load does not block shell startup) and
 # registers _zpun_precmd_nag to display results before the first prompt.
-# Activated by setting ZSH_PKG_UPDATE_NAG_BACKGROUND=1.
+# This is the default auto-run path; opt into the synchronous _zpun_main by
+# setting ZSH_PKG_UPDATE_NAG_BACKGROUND=0.
 _zpun_main_deferred() {
   emulate -L zsh
   setopt local_options
@@ -360,14 +361,21 @@ zsh-pkg-update-nag() {
   esac
 }
 
-# Source-time entry: run the main flow once per shell startup. Tests that want
-# to source the plugin without triggering the auto-run set ZSH_PKG_UPDATE_NAG_NO_AUTORUN=1.
-# Set ZSH_PKG_UPDATE_NAG_BACKGROUND=1 to scan in the background and display results
-# before the first prompt instead of blocking shell startup.
-if [[ ${ZSH_PKG_UPDATE_NAG_NO_AUTORUN:-0} != 1 ]]; then
-  if [[ ${ZSH_PKG_UPDATE_NAG_BACKGROUND:-0} == 1 ]]; then
-    _zpun_main_deferred
-  else
+# _zpun_dispatch — pick foreground vs background based on env. Background is
+# the default; set ZSH_PKG_UPDATE_NAG_BACKGROUND=0 to opt into the synchronous
+# path, which is mainly useful when actively debugging the plugin.
+_zpun_dispatch() {
+  emulate -L zsh
+  setopt local_options
+  if [[ ${ZSH_PKG_UPDATE_NAG_BACKGROUND:-1} == 0 ]]; then
     _zpun_main
+  else
+    _zpun_main_deferred
   fi
+}
+
+# Source-time entry: run the dispatch once per shell startup. Tests that want
+# to source the plugin without triggering it set ZSH_PKG_UPDATE_NAG_NO_AUTORUN=1.
+if [[ ${ZSH_PKG_UPDATE_NAG_NO_AUTORUN:-0} != 1 ]]; then
+  _zpun_dispatch
 fi

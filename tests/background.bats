@@ -401,3 +401,43 @@ _WAIT_STAMP='
   [ "$status" -eq 0 ]
   [[ "$output" == *"SET"* ]]
 }
+
+# ---------------------------------------------------------------------------
+# Auto-run dispatch (_zpun_dispatch)
+#
+# Background mode is the default; ZSH_PKG_UPDATE_NAG_BACKGROUND=0 opts out.
+# ---------------------------------------------------------------------------
+
+@test "_zpun_dispatch picks _zpun_main_deferred by default" {
+  run run_plugin_zsh "
+    _zpun_main()          { print -r -- CALLED_MAIN }
+    _zpun_main_deferred() { print -r -- CALLED_DEFERRED }
+    unset ZSH_PKG_UPDATE_NAG_BACKGROUND
+    _zpun_dispatch
+  "
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"CALLED_DEFERRED"* ]]
+  [[ "$output" != *"CALLED_MAIN"* ]]
+}
+
+@test "_zpun_dispatch picks _zpun_main_deferred when BACKGROUND=1" {
+  run run_plugin_zsh "
+    _zpun_main()          { print -r -- CALLED_MAIN }
+    _zpun_main_deferred() { print -r -- CALLED_DEFERRED }
+    ZSH_PKG_UPDATE_NAG_BACKGROUND=1 _zpun_dispatch
+  "
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"CALLED_DEFERRED"* ]]
+  [[ "$output" != *"CALLED_MAIN"* ]]
+}
+
+@test "_zpun_dispatch picks _zpun_main when BACKGROUND=0" {
+  run run_plugin_zsh "
+    _zpun_main()          { print -r -- CALLED_MAIN }
+    _zpun_main_deferred() { print -r -- CALLED_DEFERRED }
+    ZSH_PKG_UPDATE_NAG_BACKGROUND=0 _zpun_dispatch
+  "
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"CALLED_MAIN"* ]]
+  [[ "$output" != *"CALLED_DEFERRED"* ]]
+}
