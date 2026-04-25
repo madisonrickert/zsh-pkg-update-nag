@@ -97,6 +97,12 @@ _zpun_state_dir() {
   print -r -- "${XDG_STATE_HOME:-$HOME/.local/state}/zsh-pkg-update-nag"
 }
 
+_zpun_pending_path() {
+  emulate -L zsh
+  setopt local_options
+  print -r -- "$(_zpun_state_dir)/pending_updates"
+}
+
 _zpun_debug_log_path() {
   emulate -L zsh
   setopt local_options

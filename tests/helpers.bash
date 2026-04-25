@@ -30,6 +30,7 @@ teardown_env() {
 # calling functions rather than relying on the source-time auto-run.
 run_plugin_zsh() {
   env -i HOME="$HOME" PATH="$PATH" TERM=xterm-256color \
+    ZDOTDIR="$TMP_DIR" \
     XDG_STATE_HOME="$XDG_STATE_HOME" XDG_CONFIG_HOME="$XDG_CONFIG_HOME" \
     ZPUN_FIXTURE_BREW="${ZPUN_FIXTURE_BREW:-}" \
     ZPUN_FIXTURE_NPM="${ZPUN_FIXTURE_NPM:-}" \
