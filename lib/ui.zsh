@@ -46,7 +46,9 @@ _zpun_ui_say() {
     *)      open='' ; close='' ;;
   esac
 
-  print -P -r -- "${open}${text}${close}"
+  # Escape % in caller-supplied text so print -P doesn't expand it as a
+  # prompt sequence (e.g. %n, %D{...}). Open/close are static and safe.
+  print -P -r -- "${open}${text//\%/%%}${close}"
 }
 
 _zpun_ui_info()  { _zpun_ui_say dim "$*" ; }
@@ -69,7 +71,8 @@ _zpun_ui_status() {
   # interpretation, so pre-resolve the control sequence here instead.
   local reset=$'\r\033[K'
   if [[ -z ${NO_COLOR-} ]]; then
-    print -nP -- "${reset}  %F{244}…%f $*" >&2
+    local msg="$*"
+    print -nP -- "${reset}  %F{244}…%f ${msg//\%/%%}" >&2
   else
     print -n -- "${reset}  ... $*" >&2
   fi
@@ -144,7 +147,9 @@ _zpun_ui_render_summary() {
     (( pad < 0 )) && pad=0
     spaces=${(l:$pad:: :)}
     if _zpun_ui_color_enabled; then
-      print -P -r -- "    %F{default}${pkg}%f${spaces}  %F{yellow}${cur}%f %F{244}→%f %F{green}${lat}%f"
+      # Escape % in provider-sourced fields so print -P doesn't interpret
+      # them as prompt sequences. Width math above used the unescaped pkg.
+      print -P -r -- "    %F{default}${pkg//\%/%%}%f${spaces}  %F{yellow}${cur//\%/%%}%f %F{244}→%f %F{green}${lat//\%/%%}%f"
     else
       print -r -- "    ${pkg}${spaces}  ${cur} → ${lat}"
     fi
@@ -163,7 +168,7 @@ _zpun_ui_read_choice() {
   local key
 
   if _zpun_ui_color_enabled; then
-    print -nP -r -- "  %F{cyan}${prompt}%f " >&2
+    print -nP -r -- "  %F{cyan}${prompt//\%/%%}%f " >&2
   else
     print -n -r -- "  ${prompt} " >&2
   fi

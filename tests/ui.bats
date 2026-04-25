@@ -29,6 +29,28 @@ teardown() { teardown_env ; }
   [[ "$output" != *$'\x1b['* ]]
 }
 
+@test "summary preserves literal % in pkg/version under print -P" {
+  # Force the color path so the print -P branch executes; without a TTY
+  # _zpun_ui_color_enabled would otherwise short-circuit.
+  run run_plugin_zsh "
+    _zpun_ui_color_enabled() { return 0 }
+    _zpun_ui_render_summary $'brew\t100%cool\t1.0%a\t2.0%b'
+  "
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"100%cool"* ]]
+  [[ "$output" == *"1.0%a"* ]]
+  [[ "$output" == *"2.0%b"* ]]
+}
+
+@test "_zpun_ui_say preserves literal % in caller-supplied text" {
+  run run_plugin_zsh '
+    _zpun_ui_color_enabled() { return 0 }
+    _zpun_ui_say err "upgrade failed for npm 100%-pkg"
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"100%-pkg"* ]]
+}
+
 @test "progress dispatcher fans out to every registered hook" {
   run run_plugin_zsh '
     typeset -ga seen=()
