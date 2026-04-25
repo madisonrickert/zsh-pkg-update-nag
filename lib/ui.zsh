@@ -83,6 +83,28 @@ _zpun_ui_status_clear() {
   return 0
 }
 
+# _zpun_progress_emit <message…> — fan a progress event out to every hook
+# in $_zpun_progress_hooks. Long-running phases call this so a downstream
+# listener (the spinner today; potentially debug log, telemetry, IDE
+# integration tomorrow) can react without modifying call sites.
+#
+# Replace or extend the listener set with array assignment / append:
+#   _zpun_progress_hooks=( my_listener )
+#   _zpun_progress_hooks+=( another_listener )
+_zpun_progress_emit() {
+  emulate -L zsh
+  setopt local_options
+  local fn
+  for fn in $_zpun_progress_hooks; do
+    "$fn" "$@"
+  done
+}
+
+# Default hook: forward to the existing single-line spinner.
+_zpun_progress_to_status() { _zpun_ui_status "$@" }
+
+typeset -ga _zpun_progress_hooks=( _zpun_progress_to_status )
+
 # _zpun_ui_render_summary <lines…> — print the grouped tier-1 summary.
 # Each input line is manager\tname\tcurrent\tlatest.
 _zpun_ui_render_summary() {

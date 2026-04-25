@@ -316,6 +316,7 @@ _zpun_min_age_prefetch_brew() {
 
   (( ${#uncached_names} )) || return 0
 
+  _zpun_progress_emit "Resolving Homebrew paths (${#uncached_names} package$( (( ${#uncached_names} == 1 )) || print s ))…"
   local info
   info=$(brew info --json=v2 "${uncached_names[@]}" 2>/dev/null) || return 0
   [[ -n $info ]] || return 0
@@ -354,10 +355,13 @@ _zpun_min_age_prefetch_brew() {
   # trip (~1.5 s for 35 packages). Returns 0 only when the response was
   # delivered AND parsed; falls through on no-auth, network failure, or
   # GraphQL-level errors.
+  _zpun_progress_emit "Fetching Homebrew publish dates (${#job_names} via GitHub)…"
   if _zpun_min_age_brew_graphql_prefetch \
        job_names job_versions job_repos job_paths; then
     return 0
   fi
+
+  _zpun_progress_emit "Fetching Homebrew publish dates (${#job_names} via GitHub REST)…"
 
   # Fallback: parallel REST per package, using the already-batched path map
   # so we don't repay the per-name `brew info` cost. Each worker is a

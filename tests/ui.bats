@@ -29,6 +29,40 @@ teardown() { teardown_env ; }
   [[ "$output" != *$'\x1b['* ]]
 }
 
+@test "progress dispatcher fans out to every registered hook" {
+  run run_plugin_zsh '
+    typeset -ga seen=()
+    _hook_a() { seen+=( "a:$*" ) }
+    _hook_b() { seen+=( "b:$*" ) }
+    _zpun_progress_hooks=( _hook_a _hook_b )
+    _zpun_progress_emit "checking foo"
+    _zpun_progress_emit "querying bar"
+    print -l -- "${seen[@]}"
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"a:checking foo"* ]]
+  [[ "$output" == *"b:checking foo"* ]]
+  [[ "$output" == *"a:querying bar"* ]]
+  [[ "$output" == *"b:querying bar"* ]]
+}
+
+@test "progress hooks default to forwarding to the spinner status" {
+  run run_plugin_zsh '
+    print -r -- "${_zpun_progress_hooks[@]}"
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"_zpun_progress_to_status"* ]]
+}
+
+@test "progress emit is a no-op when no hooks are registered" {
+  run run_plugin_zsh '
+    _zpun_progress_hooks=()
+    _zpun_progress_emit "should reach nobody" && echo OK
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"OK"* ]]
+}
+
 @test "check-env reports manager status" {
   run run_plugin_zsh "_zpun_ui_print_env"
   [ "$status" -eq 0 ]
