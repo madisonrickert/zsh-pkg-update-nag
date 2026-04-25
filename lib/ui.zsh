@@ -88,9 +88,11 @@ _zpun_ui_status_clear() {
 
 # _zpun_input_capture_begin — silently absorb keystrokes during the foreground
 # scan so they don't echo over the spinner. Switches the terminal to
-# -echo -icanon, then _zpun_input_capture_end drains the queued bytes and
-# replays them onto the next ZLE prompt via `print -z`. No-op when stdin
-# isn't a TTY (background mode, scripts, captured tests).
+# -echo -icanon and stays that way through the y/n/s prompt; the prompt's
+# read enables echo just for the answer key, then `_zpun_input_capture_end`
+# restores the saved tty and replays buffered bytes onto the next ZLE prompt
+# via `print -z`. No-op when stdin isn't a TTY (background mode, scripts,
+# captured tests).
 #
 # Caller MUST ensure _zpun_input_capture_end runs on every exit path —
 # typically via the existing INT/TERM/EXIT trap in _zpun_main.
@@ -102,24 +104,35 @@ _zpun_input_capture_begin() {
   saved=$(stty -g 2>/dev/null) || return 0
   typeset -g _ZPUN_TTY_SAVED=$saved
   typeset -g _ZPUN_INPUT_BUFFER=
-  stty -echo -icanon 2>/dev/null
+  # min 1 time 0 makes blocking reads return on the first byte; -t 0 reads
+  # used by _zpun_input_capture_drain are independently non-blocking.
+  stty -echo -icanon min 1 time 0 2>/dev/null
 }
 
-# _zpun_input_capture_end — drain any keystrokes still queued in the tty,
-# restore the saved terminal state, then push the captured bytes onto ZLE's
-# editor buffer with `print -z` so the user's typed-ahead input lands on
-# the next interactive prompt. Idempotent — safe to call from a trap that
-# may also fire on the normal exit path.
-_zpun_input_capture_end() {
+# _zpun_input_capture_drain — append any currently-queued tty bytes to the
+# capture buffer. Called between the scan and any prompt's read so type-ahead
+# the user kept producing after the scan ended doesn't accidentally answer
+# the prompt. Safe to call repeatedly. No-op when no capture session active.
+_zpun_input_capture_drain() {
   emulate -L zsh
   setopt local_options
   (( ${+_ZPUN_TTY_SAVED} )) || return 0
-  # stty is still -icanon here, so reads return char-by-char without
-  # waiting for a newline; -t 0 makes them non-blocking.
   local key
   while read -k 1 -t 0 -u 0 key 2>/dev/null; do
     _ZPUN_INPUT_BUFFER+=$key
   done
+  return 0
+}
+
+# _zpun_input_capture_end — final drain, restore the saved tty, push the
+# captured bytes onto ZLE's editor buffer with `print -z` so the user's
+# typed-ahead input lands on the next interactive prompt. Idempotent — safe
+# to call from a trap that may also fire on the normal exit path.
+_zpun_input_capture_end() {
+  emulate -L zsh
+  setopt local_options
+  (( ${+_ZPUN_TTY_SAVED} )) || return 0
+  _zpun_input_capture_drain
   [[ -n $_ZPUN_TTY_SAVED ]] && stty "$_ZPUN_TTY_SAVED" 2>/dev/null
   [[ -n $_ZPUN_INPUT_BUFFER ]] && print -z -- "$_ZPUN_INPUT_BUFFER"
   unset _ZPUN_TTY_SAVED _ZPUN_INPUT_BUFFER
@@ -212,17 +225,37 @@ _zpun_ui_read_choice() {
     print -n -r -- "  ${prompt} " >&2
   fi
 
-  # Put the terminal in non-canonical mode for the duration of the read so a
-  # single keypress is sufficient — `read -k 1` only consumes one byte but
-  # the kernel buffers input until Enter while the line is in cooked mode.
-  # The function-local EXIT trap (active under `emulate -L zsh`'s default
-  # LOCAL_TRAPS) restores the tty on every exit path, including signals.
+  # The terminal must be in non-canonical mode for `read -k 1` to return on
+  # a single keypress (cooked mode buffers input until Enter). Two cases:
+  #
+  # 1. We're inside a capture session (_ZPUN_TTY_SAVED set): the terminal is
+  #    already in -echo -icanon. Drain any queued type-ahead into the shared
+  #    buffer so it doesn't get consumed as the answer, then briefly enable
+  #    echo so the user sees their keypress. Function-local EXIT trap puts
+  #    echo back off; the surrounding capture session handles full restore.
+  #
+  # 2. Standalone (per-package prompt during upgrades, or background-mode
+  #    precmd path): no capture session active, terminal is whatever the
+  #    user's shell left it. Save it, switch to cbreak with echo, restore on
+  #    exit via function-local EXIT trap.
+  #
+  # Function-local traps work here because `emulate -L zsh` enables
+  # LOCAL_TRAPS, so they fire on every return path including signal unwinds.
   local saved_tty
   if [[ -t 0 ]]; then
-    saved_tty=$(stty -g 2>/dev/null)
-    if [[ -n $saved_tty ]]; then
-      stty -icanon min 1 time 0 2>/dev/null
-      trap "stty '$saved_tty' 2>/dev/null" EXIT
+    if (( ${+_ZPUN_TTY_SAVED} )); then
+      _zpun_input_capture_drain
+      stty echo 2>/dev/null
+      # If a signal-driven outer trap fully restores the tty mid-read
+      # (clearing _ZPUN_TTY_SAVED), our cleanup must NOT then turn echo
+      # back off on the now-restored terminal — the gate guards that.
+      trap '(( ${+_ZPUN_TTY_SAVED} )) && stty -echo 2>/dev/null' EXIT
+    else
+      saved_tty=$(stty -g 2>/dev/null)
+      if [[ -n $saved_tty ]]; then
+        stty -icanon echo min 1 time 0 2>/dev/null
+        trap "stty '$saved_tty' 2>/dev/null" EXIT
+      fi
     fi
   fi
 
@@ -260,6 +293,12 @@ _zpun_ui_prompt_and_upgrade() {
   _zpun_ui_render_summary "${lines[@]}"
 
   local choice=$(_zpun_ui_read_choice "Update all? [Y/n/s] ›" "yns" "y")
+
+  # End any active capture session before running upgrades: restore the tty
+  # to a normal cooked+echo state for `brew upgrade`, `npm install -g`, etc.
+  # to behave normally, and replay any captured type-ahead onto the next
+  # ZLE prompt. No-op when no session is active (background-mode precmd).
+  _zpun_input_capture_end
 
   case $choice in
     y) _zpun_ui_upgrade_all "${lines[@]}" ;;

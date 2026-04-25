@@ -189,12 +189,14 @@ _zpun_main() {
   local -a outdated
   outdated=( ${(f)"$(_zpun_collect_outdated)"} )
 
-  # Restore the tty before the y/n/s prompt so the user's response is echoed
-  # and subsequent upgrade commands inherit a normal terminal.
-  _zpun_input_capture_end
-
   if (( ${#outdated} )); then
+    # Capture stays active through the prompt so chars typed between the
+    # scan ending and the y/n/s read don't echo or leak into the read.
+    # _zpun_ui_prompt_and_upgrade calls _zpun_input_capture_end after the
+    # answer is collected and before any upgrade commands run.
     _zpun_ui_prompt_and_upgrade "${outdated[@]}"
+  else
+    _zpun_input_capture_end
   fi
 
   _zpun_rate_limit_stamp
