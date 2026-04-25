@@ -112,6 +112,36 @@ teardown() { teardown_env ; }
   [[ "$output" == *"[y]"* ]]
 }
 
+@test "input_capture is a no-op when stdin isn't a TTY" {
+  run run_plugin_zsh '
+    _zpun_input_capture_begin
+    print -r -- "saved=${_ZPUN_TTY_SAVED-unset}"
+    print -r -- "buffer=${_ZPUN_INPUT_BUFFER-unset}"
+    _zpun_input_capture_end
+    print -r -- "OK"
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"saved=unset"* ]]
+  [[ "$output" == *"buffer=unset"* ]]
+  [[ "$output" == *"OK"* ]]
+}
+
+@test "input_capture_end is idempotent" {
+  run run_plugin_zsh '
+    typeset -g _ZPUN_TTY_SAVED=""
+    typeset -g _ZPUN_INPUT_BUFFER=""
+    _zpun_input_capture_end
+    _zpun_input_capture_end
+    print -r -- "saved=${_ZPUN_TTY_SAVED-unset}"
+    print -r -- "buffer=${_ZPUN_INPUT_BUFFER-unset}"
+    print -r -- "OK"
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"saved=unset"* ]]
+  [[ "$output" == *"buffer=unset"* ]]
+  [[ "$output" == *"OK"* ]]
+}
+
 @test "check-env reports manager status" {
   run run_plugin_zsh "_zpun_ui_print_env"
   [ "$status" -eq 0 ]

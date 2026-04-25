@@ -173,12 +173,19 @@ _zpun_main() {
 
   _zpun_rate_limit_acquire_lock || return 0
   # Safety net: if the user Ctrl-C's mid-scan or the shell exits during the
-  # check, clear any lingering status line, release the lock, and refresh the
-  # stamp so we don't re-nag.
-  trap '_zpun_ui_status_clear; _zpun_rate_limit_release_lock; _zpun_rate_limit_stamp; trap - INT TERM EXIT' INT TERM EXIT
+  # check, restore the tty (replays any buffered keystrokes onto the next
+  # prompt), clear the status line, release the lock, and refresh the stamp
+  # so we don't re-nag.
+  trap '_zpun_input_capture_end; _zpun_ui_status_clear; _zpun_rate_limit_release_lock; _zpun_rate_limit_stamp; trap - INT TERM EXIT' INT TERM EXIT
+
+  _zpun_input_capture_begin
 
   local -a outdated
   outdated=( ${(f)"$(_zpun_collect_outdated)"} )
+
+  # Restore the tty before the y/n/s prompt so the user's response is echoed
+  # and subsequent upgrade commands inherit a normal terminal.
+  _zpun_input_capture_end
 
   if (( ${#outdated} )); then
     _zpun_ui_prompt_and_upgrade "${outdated[@]}"

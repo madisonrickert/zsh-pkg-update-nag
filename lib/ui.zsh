@@ -86,6 +86,45 @@ _zpun_ui_status_clear() {
   return 0
 }
 
+# _zpun_input_capture_begin — silently absorb keystrokes during the foreground
+# scan so they don't echo over the spinner. Switches the terminal to
+# -echo -icanon, then _zpun_input_capture_end drains the queued bytes and
+# replays them onto the next ZLE prompt via `print -z`. No-op when stdin
+# isn't a TTY (background mode, scripts, captured tests).
+#
+# Caller MUST ensure _zpun_input_capture_end runs on every exit path —
+# typically via the existing INT/TERM/EXIT trap in _zpun_main.
+_zpun_input_capture_begin() {
+  emulate -L zsh
+  setopt local_options
+  [[ -t 0 ]] || return 0
+  local saved
+  saved=$(stty -g 2>/dev/null) || return 0
+  typeset -g _ZPUN_TTY_SAVED=$saved
+  typeset -g _ZPUN_INPUT_BUFFER=
+  stty -echo -icanon 2>/dev/null
+}
+
+# _zpun_input_capture_end — drain any keystrokes still queued in the tty,
+# restore the saved terminal state, then push the captured bytes onto ZLE's
+# editor buffer with `print -z` so the user's typed-ahead input lands on
+# the next interactive prompt. Idempotent — safe to call from a trap that
+# may also fire on the normal exit path.
+_zpun_input_capture_end() {
+  emulate -L zsh
+  setopt local_options
+  (( ${+_ZPUN_TTY_SAVED} )) || return 0
+  # stty is still -icanon here, so reads return char-by-char without
+  # waiting for a newline; -t 0 makes them non-blocking.
+  local key
+  while read -k 1 -t 0 -u 0 key 2>/dev/null; do
+    _ZPUN_INPUT_BUFFER+=$key
+  done
+  [[ -n $_ZPUN_TTY_SAVED ]] && stty "$_ZPUN_TTY_SAVED" 2>/dev/null
+  [[ -n $_ZPUN_INPUT_BUFFER ]] && print -z -- "$_ZPUN_INPUT_BUFFER"
+  unset _ZPUN_TTY_SAVED _ZPUN_INPUT_BUFFER
+}
+
 # _zpun_progress_emit <message…> — fan a progress event out to every hook
 # in $_zpun_progress_hooks. Long-running phases call this so a downstream
 # listener (the spinner today; potentially debug log, telemetry, IDE
