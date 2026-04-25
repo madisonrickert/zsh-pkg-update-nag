@@ -18,10 +18,10 @@ teardown() { teardown_env ; }
 @test "threshold honors the global for every manager" {
   run run_plugin_zsh "
     zsh_pkg_update_nag_min_age=7
-    print -r -- \$(_zpun_min_age_threshold brew),\$(_zpun_min_age_threshold npm),\$(_zpun_min_age_threshold uv),\$(_zpun_min_age_threshold gem)
+    print -r -- \$(_zpun_min_age_threshold brew),\$(_zpun_min_age_threshold npm),\$(_zpun_min_age_threshold pnpm),\$(_zpun_min_age_threshold uv),\$(_zpun_min_age_threshold gem)
   "
   [ "$status" -eq 0 ]
-  [ "$output" = "7,7,7,7" ]
+  [ "$output" = "7,7,7,7,7" ]
 }
 
 @test "per-manager override wins over global" {
@@ -190,6 +190,18 @@ teardown() { teardown_env ; }
 
 @test "npm lookup returns nothing when fixture is in 'missing' mode" {
   ZPUN_FIXTURE_NPM_AGE=missing run run_plugin_zsh "_zpun_min_age_lookup_npm typescript 5.5.0"
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+}
+
+@test "pnpm lookup returns epoch from npm registry curl fixture" {
+  run run_plugin_zsh "_zpun_min_age_lookup_pnpm rollup 4.31.0"
+  [ "$status" -eq 0 ]
+  [ "$output" = "1579091696" ]   # 2020-01-15T12:34:56Z
+}
+
+@test "pnpm lookup returns nothing when curl fixture fails" {
+  ZPUN_FIXTURE_CURL=fail run run_plugin_zsh "_zpun_min_age_lookup_pnpm rollup 4.31.0"
   [ "$status" -eq 1 ]
   [ -z "$output" ]
 }

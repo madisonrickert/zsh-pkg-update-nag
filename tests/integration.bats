@@ -44,7 +44,7 @@ teardown() { teardown_env ; }
 }
 
 @test "collect returns nothing when all managers report empty" {
-  ZPUN_FIXTURE_BREW=empty ZPUN_FIXTURE_NPM=empty ZPUN_FIXTURE_UV=empty \
+  ZPUN_FIXTURE_BREW=empty ZPUN_FIXTURE_NPM=empty ZPUN_FIXTURE_PNPM=empty ZPUN_FIXTURE_UV=empty \
     run run_plugin_zsh "_zpun_collect_outdated"
   [ "$status" -eq 0 ]
   [ -z "$output" ]

@@ -11,6 +11,7 @@ setup() {
   cat > "$XDG_CONFIG_HOME/zsh-pkg-update-nag/config.zsh" <<'ZSH'
 zsh_pkg_update_nag_brew=(gh)
 zsh_pkg_update_nag_npm=off
+zsh_pkg_update_nag_pnpm=off
 zsh_pkg_update_nag_uv=off
 zsh_pkg_update_nag_gem=off
 ZSH
@@ -25,5 +26,6 @@ teardown() { teardown_env ; }
   [[ "$output" != *"fd"* ]]
   [[ "$output" != *"example-app@latest"* ]]
   [[ "$output" != *"pnpm"* ]]
+  [[ "$output" != *"rollup"* ]]
   [[ "$output" != *"ruff"* ]]
 }

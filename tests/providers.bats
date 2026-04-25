@@ -26,6 +26,19 @@ teardown() { teardown_env ; }
   [[ "$output" == *"typescript	5.4.0	5.5.0"* ]]
 }
 
+@test "pnpm provider parses --format json output" {
+  run run_plugin_zsh "_zpun_provider_pnpm"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"rollup	4.30.0	4.31.0"* ]]
+  [[ "$output" == *"vite	5.0.0	5.1.0"* ]]
+}
+
+@test "pnpm provider is silent when nothing is outdated" {
+  ZPUN_FIXTURE_PNPM=empty run run_plugin_zsh "_zpun_provider_pnpm"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
 @test "uv provider parses 'latest: vX' lines" {
   run run_plugin_zsh "_zpun_provider_uv"
   [ "$status" -eq 0 ]

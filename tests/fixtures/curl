@@ -10,6 +10,7 @@
 # Recognizes URLs of the form:
 #   https://pypi.org/pypi/<pkg>/json
 #   https://rubygems.org/api/v1/versions/<pkg>.json
+#   https://registry.npmjs.org/<pkg>
 #   https://api.github.com/repos/Homebrew/homebrew-(core|cask)/commits?path=...
 # Anything else falls through to a silent exit 0.
 
@@ -58,6 +59,22 @@ case "$url" in
       printf '"0.6.4":[{"upload_time":"%s"}],' "$ts"
       printf '"0.6.0":[{"upload_time":"%s"}],' "$ts"
       printf '"1.0.0":[{"upload_time":"%s"}]'  "$ts"
+      printf '}}\n'
+    fi
+    ;;
+  *registry.npmjs.org/*)
+    # The pnpm min-age lookup hits the npm registry directly. Real responses
+    # include a `.time` map of version → ISO-8601 timestamp; we fan out the
+    # versions tests reference under that key.
+    if [ "$mode" = "missing" ]; then
+      printf '{"time":{"created":"%sZ","modified":"%sZ"}}\n' "$ts" "$ts"
+    else
+      printf '{"time":{'
+      printf '"created":"%sZ",' "$ts"
+      printf '"modified":"%sZ",' "$ts"
+      printf '"4.31.0":"%sZ",' "$ts"
+      printf '"5.1.0":"%sZ",'  "$ts"
+      printf '"1.0.0":"%sZ"'   "$ts"
       printf '}}\n'
     fi
     ;;

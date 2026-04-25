@@ -4,6 +4,7 @@
 typeset -gA _ZPUN_MANAGER_LABELS=(
   brew "Homebrew"
   npm  "npm (global)"
+  pnpm "pnpm (global)"
   uv   "uv tools"
   gem  "RubyGems"
 )
@@ -380,7 +381,7 @@ _zpun_ui_print_env() {
   print -r -- "  stamp:         $stamp_status"
   print -r -- "  managers:"
   local m mode allow available age_label age_threshold
-  for m in brew npm uv gem; do
+  for m in brew npm pnpm uv gem; do
     mode="off"
     if _zpun_manager_enabled "$m"; then
       allow=$(_zpun_manager_allowlist "$m" | tr '\n' ' ')

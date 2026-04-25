@@ -64,4 +64,5 @@ jobs:
             tests/fixtures/curl \
             tests/fixtures/gem \
             tests/fixtures/npm \
+            tests/fixtures/pnpm \
             tests/fixtures/uv

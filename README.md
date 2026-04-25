@@ -22,7 +22,7 @@ A zsh plugin that nags you — gently, and no more than once every 4 hours — a
 - **`n`** — skip everything; no re-nag until the next interval.
 - **`s`** — drop into per-package `Y/n` across all managers.
 
-Supports **Homebrew** (formulae *and* casks), **npm (global)**, **uv tools**, and **RubyGems**. Managers are enabled independently, each with a choice of `all` (scan everything), `off`, or an explicit allowlist.
+Supports **Homebrew** (formulae *and* casks), **npm (global)**, **pnpm (global)**, **uv tools**, and **RubyGems**. Managers are enabled independently, each with a choice of `all` (scan everything), `off`, or an explicit allowlist.
 
 ### Why?
 
@@ -106,6 +106,7 @@ zsh_pkg_update_nag_interval_hours=4
 # package names to watch. Default shown.
 zsh_pkg_update_nag_brew=all
 zsh_pkg_update_nag_npm=all
+zsh_pkg_update_nag_pnpm=all
 zsh_pkg_update_nag_uv=all
 zsh_pkg_update_nag_gem=off
 
@@ -122,6 +123,7 @@ zsh_pkg_update_nag_min_age=0
 # slowest (npm) or where you trust the curation (brew/homebrew-core).
 # zsh_pkg_update_nag_min_age_brew=0
 # zsh_pkg_update_nag_min_age_npm=14
+# zsh_pkg_update_nag_min_age_pnpm=14
 # zsh_pkg_update_nag_min_age_uv=7
 # zsh_pkg_update_nag_min_age_gem=7
 ```
@@ -188,9 +190,9 @@ If your package manager has minimum-release-age built in, use **that** for those
 |---|---|---|
 | brew | None (homebrew/core is human-curated) | Use this plugin's setting |
 | npm | None | Use this plugin's setting |
+| pnpm | [`minimumReleaseAge`](https://pnpm.io/settings#minimumreleaseage) in `.npmrc` | Prefer pnpm's native setting; this plugin's setting is the fallback when you can't change `.npmrc` |
 | uv | [`--exclude-newer DATE`](https://docs.astral.sh/uv/reference/cli/#uv-pip-install--exclude-newer) (per-invocation; no persistent config) | This plugin's setting is easier for ongoing use |
 | gem | None | Use this plugin's setting |
-| _(out of scope)_ pnpm | [`minimumReleaseAge`](https://pnpm.io/settings#minimumreleaseage) in `.npmrc` | Prefer pnpm's native setting |
 | _(out of scope)_ cargo | [`--minimum-release-age`](https://doc.rust-lang.org/cargo/commands/cargo-install.html) | Prefer cargo's native flag |
 
 ##### Performance
@@ -201,6 +203,7 @@ Each outdated package needs one publish-date lookup the first time it's seen. Lo
 |---|---|---|
 | brew | One batched `brew info --json=v2` for the file paths (~1.2 s fixed), then a single GitHub GraphQL query covering every package via `gh api graphql` (uses your `gh` token, 5000/hr quota) or `curl` with `$GITHUB_TOKEN`. Falls back to per-package serial REST when neither is available (60/hr unauth quota). | ~3 s for any number of packages on the fast path; ~N seconds on the unauth REST fallback |
 | npm | `npm view <pkg> time --json` + `jq` | ~350–650 ms (network) per package |
+| pnpm | `https://registry.npmjs.org/<pkg>` via `curl` + `jq` (same registry as npm; we hit it directly so users without `npm` installed still get gating) | ~100–300 ms (network) per package |
 | uv | `https://pypi.org/pypi/<pkg>/json` via `curl` + `jq` | ~100–300 ms (network) per package |
 | gem | `https://rubygems.org/api/v1/versions/<pkg>.json` via `curl` + `jq` | ~100–300 ms (network) per package |
 

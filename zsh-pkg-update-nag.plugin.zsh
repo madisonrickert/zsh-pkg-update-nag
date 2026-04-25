@@ -51,7 +51,7 @@ _zpun_min_age_active() {
   setopt local_options
 
   local m override_var t
-  for m in brew npm uv gem; do
+  for m in brew npm pnpm uv gem; do
     override_var="zsh_pkg_update_nag_min_age_${m}"
     if (( ${(P)+override_var} )); then
       t=${(P)override_var:-0}
@@ -91,13 +91,13 @@ _zpun_collect_outdated() {
   if _zpun_min_age_active; then
     source "$_ZPUN_DIR/lib/min_age.zsh"
     _have_min_age=1
-    for manager in brew npm uv gem; do
+    for manager in brew npm pnpm uv gem; do
       _zpun_manager_enabled "$manager" || continue
       source "$_ZPUN_DIR/lib/providers/${manager}.zsh"
     done
   fi
 
-  for manager in brew npm uv gem; do
+  for manager in brew npm pnpm uv gem; do
     _zpun_manager_enabled "$manager" || continue
     provider_fn="_zpun_provider_${manager}"
 
@@ -168,6 +168,7 @@ _zpun_run_upgrade() {
   case $manager in
     brew) cmd=(brew upgrade "$pkg") ;;
     npm)  cmd=(npm install -g "${pkg}@latest") ;;
+    pnpm) cmd=(pnpm add -g "${pkg}@latest") ;;
     uv)   cmd=(uv tool upgrade "$pkg") ;;
     gem)  cmd=(gem update "$pkg") ;;
     *)    _zpun_ui_error "unknown manager: $manager"; return 2 ;;

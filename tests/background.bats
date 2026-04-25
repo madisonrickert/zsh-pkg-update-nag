@@ -31,7 +31,7 @@ _WAIT_STAMP='
 # ---------------------------------------------------------------------------
 
 @test "background scan writes 'ok' when no updates found" {
-  ZPUN_FIXTURE_BREW=empty ZPUN_FIXTURE_NPM=empty ZPUN_FIXTURE_UV=empty \
+  ZPUN_FIXTURE_BREW=empty ZPUN_FIXTURE_NPM=empty ZPUN_FIXTURE_PNPM=empty ZPUN_FIXTURE_UV=empty \
     run run_plugin_zsh "
       _zpun_should_run() { return 0 }
       _zpun_main_deferred
@@ -60,7 +60,7 @@ _WAIT_STAMP='
 # Pre-fix code cleared the trap before exit (`trap - INT TERM EXIT`), so a
 # silent mv failure left no pending file and the precmd hook polled forever.
 @test "background scan writes 'err' when mv fails silently (trap is the exit invariant)" {
-  ZPUN_FIXTURE_BREW=empty ZPUN_FIXTURE_NPM=empty ZPUN_FIXTURE_UV=empty \
+  ZPUN_FIXTURE_BREW=empty ZPUN_FIXTURE_NPM=empty ZPUN_FIXTURE_PNPM=empty ZPUN_FIXTURE_UV=empty \
     run run_plugin_zsh "
       _zpun_should_run() { return 0 }
       # zsh subshells inherit function definitions, so this overrides the mv
@@ -79,7 +79,7 @@ _WAIT_STAMP='
 # ---------------------------------------------------------------------------
 
 @test "background scan stamps the rate limit on completion" {
-  ZPUN_FIXTURE_BREW=empty ZPUN_FIXTURE_NPM=empty ZPUN_FIXTURE_UV=empty \
+  ZPUN_FIXTURE_BREW=empty ZPUN_FIXTURE_NPM=empty ZPUN_FIXTURE_PNPM=empty ZPUN_FIXTURE_UV=empty \
     run run_plugin_zsh "
       _zpun_should_run() { return 0 }
       _zpun_main_deferred
@@ -91,7 +91,7 @@ _WAIT_STAMP='
 }
 
 @test "background scan releases the lock on completion" {
-  ZPUN_FIXTURE_BREW=empty ZPUN_FIXTURE_NPM=empty ZPUN_FIXTURE_UV=empty \
+  ZPUN_FIXTURE_BREW=empty ZPUN_FIXTURE_NPM=empty ZPUN_FIXTURE_PNPM=empty ZPUN_FIXTURE_UV=empty \
     run run_plugin_zsh "
       _zpun_should_run() { return 0 }
       _zpun_main_deferred

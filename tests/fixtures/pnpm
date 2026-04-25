@@ -1,0 +1,37 @@
+#!/bin/sh
+# Fixture: pretends to be `pnpm`. Honors ZPUN_FIXTURE_PNPM:
+#
+#   default — emit two outdated rows (rollup, vite) in --format json
+#   empty   — emit `{}` (no outdated globals)
+#   fail    — exit non-zero with an error message on stderr (network or
+#             environment failure simulation)
+
+case "$1" in
+  outdated)
+    case "${ZPUN_FIXTURE_PNPM:-default}" in
+      empty)
+        printf '{}\n'
+        exit 0
+        ;;
+      fail)
+        echo "pnpm fixture: simulated failure" >&2
+        exit 2
+        ;;
+      *)
+        # `pnpm outdated` exits non-zero when anything is outdated — that's
+        # real behavior. The provider ignores status and parses output.
+        cat <<'OUT'
+{"rollup":{"current":"4.30.0","latest":"4.31.0","wanted":"4.31.0"},"vite":{"current":"5.0.0","latest":"5.1.0","wanted":"5.1.0"}}
+OUT
+        exit 1
+        ;;
+    esac
+    ;;
+  add)
+    echo "pnpm fixture installed: $*"
+    exit 0
+    ;;
+  *)
+    exit 0
+    ;;
+esac
