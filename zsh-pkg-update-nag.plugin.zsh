@@ -172,11 +172,17 @@ _zpun_main() {
   _zpun_rate_limit_is_due || return 0
 
   _zpun_rate_limit_acquire_lock || return 0
+  # _ZPUN_INTERRUPTED is the trap → upgrade-loop signal: a Ctrl-C that hits
+  # mid-upgrade fires the trap (which cleans up state and disarms itself),
+  # but control returns to the next loop iteration unless we explicitly
+  # check. The upgrade loops in lib/ui.zsh test this flag at the top of each
+  # iteration and bail out instead of charging ahead with the next package.
+  typeset -g _ZPUN_INTERRUPTED=0
   # Safety net: if the user Ctrl-C's mid-scan or the shell exits during the
   # check, restore the tty (replays any buffered keystrokes onto the next
   # prompt), clear the status line, release the lock, and refresh the stamp
   # so we don't re-nag.
-  trap '_zpun_input_capture_end; _zpun_ui_status_clear; _zpun_rate_limit_release_lock; _zpun_rate_limit_stamp; trap - INT TERM EXIT' INT TERM EXIT
+  trap '_ZPUN_INTERRUPTED=1; _zpun_input_capture_end; _zpun_ui_status_clear; _zpun_rate_limit_release_lock; _zpun_rate_limit_stamp; trap - INT TERM EXIT' INT TERM EXIT
 
   _zpun_input_capture_begin
 
@@ -194,6 +200,7 @@ _zpun_main() {
   _zpun_rate_limit_stamp
   _zpun_rate_limit_release_lock
   trap - INT TERM EXIT
+  unset _ZPUN_INTERRUPTED
 }
 
 # _zpun_p10k_instant_prompt_active — 0 if powerlevel10k instant-prompt is

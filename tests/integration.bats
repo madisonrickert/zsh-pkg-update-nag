@@ -92,6 +92,34 @@ teardown() { teardown_env ; }
   [[ "$output" == *$'npm\tpnpm'* ]]
 }
 
+@test "upgrade_all bails out on Ctrl-C without running any upgrades" {
+  run run_plugin_zsh "
+    NO_COLOR=1
+    _ZPUN_INTERRUPTED=1
+    lines=( \$'brew\tgh\t2.60.0\t2.62.0' \$'npm\tpnpm\t9.0.0\t9.5.1' )
+    _zpun_ui_upgrade_all \"\${lines[@]}\"
+  "
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Stopped (Ctrl-C)."* ]]
+  [[ "$output" != *"fixture upgraded"* ]]
+  [[ "$output" != *"fixture installed"* ]]
+  [[ "$output" != *"Done."* ]]
+}
+
+@test "upgrade_individually bails out on Ctrl-C without prompting" {
+  run run_plugin_zsh "
+    NO_COLOR=1
+    _ZPUN_INTERRUPTED=1
+    lines=( \$'brew\tgh\t2.60.0\t2.62.0' \$'npm\tpnpm\t9.0.0\t9.5.1' )
+    _zpun_ui_upgrade_individually \"\${lines[@]}\" <<< 'yy'
+  "
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Stopped (Ctrl-C)."* ]]
+  [[ "$output" != *"fixture upgraded"* ]]
+  [[ "$output" != *"fixture installed"* ]]
+  [[ "$output" != *"update brew gh"* ]]
+}
+
 @test "_zpun_run_upgrade builds correct command per manager" {
   run run_plugin_zsh "_zpun_run_upgrade brew pnpm; _zpun_run_upgrade npm typescript; _zpun_run_upgrade gem rails"
   [ "$status" -eq 0 ]

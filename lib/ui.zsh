@@ -260,6 +260,7 @@ _zpun_ui_upgrade_all() {
 
   local line manager pkg
   for line in "$@"; do
+    (( ${_ZPUN_INTERRUPTED:-0} )) && { _zpun_ui_info "Stopped (Ctrl-C)."; return; }
     manager=${${(s:	:)line}[1]}
     pkg=${${(s:	:)line}[2]}
     _zpun_run_upgrade "$manager" "$pkg" || _zpun_ui_error "  upgrade failed for ${manager} ${pkg}"
@@ -273,6 +274,7 @@ _zpun_ui_upgrade_individually() {
 
   local line manager pkg cur lat choice
   for line in "$@"; do
+    (( ${_ZPUN_INTERRUPTED:-0} )) && { _zpun_ui_info "Stopped (Ctrl-C)."; return; }
     manager=${${(s:	:)line}[1]}
     pkg=${${(s:	:)line}[2]}
     cur=${${(s:	:)line}[3]}
