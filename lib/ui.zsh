@@ -178,6 +178,10 @@ _zpun_ui_read_choice() {
 
   if [[ -z $key || $key == $'\n' || $key == $'\r' ]]; then
     key=$default
+  elif [[ $key == $'\033' ]]; then
+    # ESC = "skip everything" — synonymous with 'n' when n is a valid choice,
+    # otherwise fall back to the caller's default.
+    [[ $valid == *n* ]] && key=n || key=$default
   fi
 
   key=${key:l}

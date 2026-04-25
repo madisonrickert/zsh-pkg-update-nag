@@ -34,14 +34,6 @@ notice (cosmetic loss only) or defer output until after the instant-prompt
 buffer has been swapped in. OMZ's `tools/check_for_upgrade.sh` handles this
 by checking `$POWERLEVEL9K_INSTANT_PROMPT` and going silent / deferring.
 
-## ESC to dismiss the update prompt
-
-Tier-1 prompt (`Update all? [Y/n/s]`) currently only accepts `y`/`n`/`s`/Enter.
-ESC would be a more discoverable "skip everything" key — particularly for
-users who expect the same behavior as a typical TUI. ESC arrives as a single
-byte (`\033`) in `read -k 1`, so the plumbing is straightforward; treat it as
-synonymous with `n`.
-
 ## Stray control characters during the spinner
 
 If the user presses arrow keys (or any other escape-sequence-emitting key)

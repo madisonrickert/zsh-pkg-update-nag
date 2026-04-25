@@ -63,6 +63,33 @@ teardown() { teardown_env ; }
   [[ "$output" == *"OK"* ]]
 }
 
+@test "read_choice: valid keypress passes through unchanged" {
+  run run_plugin_zsh '
+    choice=$(printf "s" | _zpun_ui_read_choice "p" "yns" "y")
+    print -r -- "[$choice]"
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"[s]"* ]]
+}
+
+@test "read_choice: ESC maps to 'n' when n is in the valid set" {
+  run run_plugin_zsh '
+    choice=$(printf "\033" | _zpun_ui_read_choice "p" "yns" "y")
+    print -r -- "[$choice]"
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"[n]"* ]]
+}
+
+@test "read_choice: ESC falls back to default when n is not valid" {
+  run run_plugin_zsh '
+    choice=$(printf "\033" | _zpun_ui_read_choice "p" "ya" "y")
+    print -r -- "[$choice]"
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"[y]"* ]]
+}
+
 @test "check-env reports manager status" {
   run run_plugin_zsh "_zpun_ui_print_env"
   [ "$status" -eq 0 ]
