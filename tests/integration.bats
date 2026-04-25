@@ -83,7 +83,7 @@ teardown() { teardown_env ; }
 @test "min-age per-manager override of 0 disables filtering for that manager only" {
   ZPUN_FIXTURE_NPM_AGE=fresh \
     run run_plugin_zsh "
-      zsh_pkg_update_nag_min_age_days=999
+      zsh_pkg_update_nag_min_age=999
       zsh_pkg_update_nag_min_age_npm=0
       _zpun_collect_outdated
     "

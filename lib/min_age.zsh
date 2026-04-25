@@ -1,6 +1,6 @@
 # Optional minimum-release-age gating for outdated packages.
 #
-# When zsh_pkg_update_nag_min_age_days > 0, _zpun_min_age_satisfied returns 1
+# When zsh_pkg_update_nag_min_age > 0, _zpun_min_age_satisfied returns 1
 # for any update whose latest version was published less than N days ago, and
 # _zpun_collect_outdated drops the row before it reaches the user.
 #
@@ -16,7 +16,7 @@
 # _zpun_min_age_threshold <manager> — print the configured threshold (in days)
 # for a given manager. Per-manager overrides shadow the global setting:
 #   zsh_pkg_update_nag_min_age_<manager>   if set (even to 0), wins
-#   zsh_pkg_update_nag_min_age_days        otherwise
+#   zsh_pkg_update_nag_min_age        otherwise
 # Default 0 (off).
 _zpun_min_age_threshold() {
   emulate -L zsh
@@ -29,7 +29,7 @@ _zpun_min_age_threshold() {
   if (( ${(P)+override_var} )); then
     print -r -- "${(P)override_var:-0}"
   else
-    print -r -- "${zsh_pkg_update_nag_min_age_days:-0}"
+    print -r -- "${zsh_pkg_update_nag_min_age:-0}"
   fi
 }
 
@@ -371,8 +371,8 @@ _zpun_min_age_prefetch_brew() {
   # Unauthenticated callers share a 60-requests/hour cap on this endpoint —
   # parallelism finishes faster but doesn't extend the quota; once the cap
   # is hit the lookup fails-open and a debug-log line records why.
-  # Tunable via ZSH_PKG_UPDATE_NAG_LOOKUP_PARALLELISM (default 6).
-  local max_parallel=${ZSH_PKG_UPDATE_NAG_LOOKUP_PARALLELISM:-6}
+  # Tunable via ZSH_PKG_UPDATE_NAG_MIN_AGE_LOOKUP_PARALLELISM (default 6).
+  local max_parallel=${ZSH_PKG_UPDATE_NAG_MIN_AGE_LOOKUP_PARALLELISM:-6}
   (( max_parallel >= 1 )) || max_parallel=1
   local tmp_dir
   tmp_dir=$(mktemp -d -t zpun.parallel.XXXXXX) || return 0

@@ -11,7 +11,7 @@ _zpun_config_load() {
   : ${zsh_pkg_update_nag_npm:=all}
   : ${zsh_pkg_update_nag_uv:=all}
   : ${zsh_pkg_update_nag_gem:=off}
-  : ${zsh_pkg_update_nag_min_age_days:=0}
+  : ${zsh_pkg_update_nag_min_age:=0}
 
   local config_path=${ZSH_PKG_UPDATE_NAG_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/zsh-pkg-update-nag/config.zsh}
   if [[ -r $config_path ]]; then

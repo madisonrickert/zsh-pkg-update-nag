@@ -264,7 +264,7 @@ _zpun_ui_print_env() {
   print -r -- "  plugin dir:    $_ZPUN_DIR"
   print -r -- "  state dir:     $(_zpun_state_dir)"
   print -r -- "  interval:      ${zsh_pkg_update_nag_interval_hours}h"
-  local global_age=${zsh_pkg_update_nag_min_age_days:-0}
+  local global_age=${zsh_pkg_update_nag_min_age:-0}
   local cached_count=0
   (( $+functions[_zpun_min_age_cache_count] )) && cached_count=$(_zpun_min_age_cache_count)
   if (( global_age > 0 )); then

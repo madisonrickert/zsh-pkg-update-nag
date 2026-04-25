@@ -115,7 +115,7 @@ zsh_pkg_update_nag_gem=off
 # Minimum release age (days). Hides updates younger than this — gives
 # fresh releases time to be yanked or flagged before you adopt them.
 # Default 0 (off). 7 is a sensible baseline; see the section below.
-zsh_pkg_update_nag_min_age_days=0
+zsh_pkg_update_nag_min_age=0
 
 # Per-manager overrides (optional). When set — even to 0 — these win over
 # the global. Useful to disable the gate for managers whose lookup is the
@@ -136,7 +136,7 @@ zsh_pkg_update_nag_min_age_days=0
 | `ZSH_PKG_UPDATE_NAG_SSH=1` | Opt in under SSH sessions (default: skipped). |
 | `ZSH_PKG_UPDATE_NAG_DEBUG=1` | Append diagnostics to `$XDG_STATE_HOME/zsh-pkg-update-nag/debug.log`. |
 | `ZSH_PKG_UPDATE_NAG_PROVIDER_TIMEOUT` | Per-provider timeout in seconds (default `10`). |
-| `ZSH_PKG_UPDATE_NAG_LOOKUP_PARALLELISM` | Concurrency for the brew min-age REST fallback (default `6`). Only applies when neither `gh` nor `$GITHUB_TOKEN` is available — otherwise the GraphQL fast path is one round trip regardless. |
+| `ZSH_PKG_UPDATE_NAG_MIN_AGE_LOOKUP_PARALLELISM` | Concurrency for the brew min-age REST fallback (default `6`). Only applies when neither `gh` nor `$GITHUB_TOKEN` is available — otherwise the GraphQL fast path is one round trip regardless. |
 | `GITHUB_TOKEN` | If set, the brew min-age prefetch uses GraphQL via `curl` with this token (5000/hr). Picked up automatically when `gh` isn't installed. |
 | `ZSH_PKG_UPDATE_NAG_CONFIG` | Override config file path. |
 | `NO_COLOR=1` | Disable color output (respected per the [NO_COLOR](https://no-color.org) spec). |
@@ -158,13 +158,13 @@ What you'll see:
 
 Results are written atomically to `$XDG_STATE_HOME/zsh-pkg-update-nag/pending_updates` and consumed once displayed. If you open several shells at once, the rate-limit lock ensures only one background scan runs; subsequent shells will pick up the same results when their first prompt fires.
 
-#### Minimum release age (`zsh_pkg_update_nag_min_age_days`)
+#### Minimum release age (`zsh_pkg_update_nag_min_age`)
 
 Optional supply-chain safety net. When set to N > 0, an update is only surfaced once its `latest` version has been published for at least N days — fresh releases get a quarantine window during which yanked or compromised versions usually surface and get pulled. Off by default (`0`).
 
 ```zsh
 # ~/.config/zsh-pkg-update-nag/config.zsh
-zsh_pkg_update_nag_min_age_days=7      # global baseline
+zsh_pkg_update_nag_min_age=7           # global baseline
 zsh_pkg_update_nag_min_age_npm=14      # stricter for npm specifically
 zsh_pkg_update_nag_min_age_brew=0      # off for brew
 ```
@@ -261,7 +261,7 @@ Nothing happens on shell start?
 ## Requirements
 
 - **zsh** 5.0 or newer.
-- **Optional:** `jq` (improves Homebrew version-delta display — without it, brew versions show as `?`; also required for any `min_age_days > 0` lookup), `curl` (required for `min_age_days > 0` on brew/uv/gem; ships in `/usr/bin/curl` on macOS and most Linuxes), [`gh`](https://cli.github.com/) (enables the GraphQL fast path for brew min-age, batching all packages into a single API call; strongly recommended if you set `min_age_days > 0` for brew — alternatively set `$GITHUB_TOKEN` and the same path runs via `curl`), `timeout` / `gtimeout` (wraps provider calls with a 10s timeout). On macOS, `gtimeout` is part of `coreutils`: `brew install coreutils`.
+- **Optional:** `jq` (improves Homebrew version-delta display — without it, brew versions show as `?`; also required for any `min_age > 0` lookup), `curl` (required for `min_age > 0` on brew/uv/gem; ships in `/usr/bin/curl` on macOS and most Linuxes), [`gh`](https://cli.github.com/) (enables the GraphQL fast path for brew min-age, batching all packages into a single API call; strongly recommended if you set `min_age > 0` for brew — alternatively set `$GITHUB_TOKEN` and the same path runs via `curl`), `timeout` / `gtimeout` (wraps provider calls with a 10s timeout). On macOS, `gtimeout` is part of `coreutils`: `brew install coreutils`.
 
 ## Limitations / roadmap
 

@@ -17,7 +17,7 @@ teardown() { teardown_env ; }
 
 @test "threshold honors the global for every manager" {
   run run_plugin_zsh "
-    zsh_pkg_update_nag_min_age_days=7
+    zsh_pkg_update_nag_min_age=7
     print -r -- \$(_zpun_min_age_threshold brew),\$(_zpun_min_age_threshold npm),\$(_zpun_min_age_threshold uv),\$(_zpun_min_age_threshold gem)
   "
   [ "$status" -eq 0 ]
@@ -26,7 +26,7 @@ teardown() { teardown_env ; }
 
 @test "per-manager override wins over global" {
   run run_plugin_zsh "
-    zsh_pkg_update_nag_min_age_days=7
+    zsh_pkg_update_nag_min_age=7
     zsh_pkg_update_nag_min_age_brew=14
     print -r -- \$(_zpun_min_age_threshold brew),\$(_zpun_min_age_threshold npm)
   "
@@ -36,7 +36,7 @@ teardown() { teardown_env ; }
 
 @test "per-manager override of 0 disables that manager only" {
   run run_plugin_zsh "
-    zsh_pkg_update_nag_min_age_days=7
+    zsh_pkg_update_nag_min_age=7
     zsh_pkg_update_nag_min_age_npm=0
     print -r -- \$(_zpun_min_age_threshold brew),\$(_zpun_min_age_threshold npm)
   "
@@ -46,7 +46,7 @@ teardown() { teardown_env ; }
 
 @test "per-manager override of empty string treats as off" {
   run run_plugin_zsh "
-    zsh_pkg_update_nag_min_age_days=7
+    zsh_pkg_update_nag_min_age=7
     zsh_pkg_update_nag_min_age_brew=''
     print -r -- \$(_zpun_min_age_threshold brew)
   "
@@ -66,7 +66,7 @@ teardown() { teardown_env ; }
 
 @test "satisfied passes when cached entry is older than threshold" {
   run run_plugin_zsh "
-    zsh_pkg_update_nag_min_age_days=7
+    zsh_pkg_update_nag_min_age=7
     local old=\$((\$(date +%s) - 365*86400))
     _zpun_min_age_cache_put npm oldpkg 1.0.0 \$old
     _zpun_min_age_satisfied npm oldpkg 1.0.0 && echo PASS || echo BLOCK
@@ -77,7 +77,7 @@ teardown() { teardown_env ; }
 
 @test "satisfied blocks when cached entry is fresher than threshold" {
   run run_plugin_zsh "
-    zsh_pkg_update_nag_min_age_days=7
+    zsh_pkg_update_nag_min_age=7
     local fresh=\$((\$(date +%s) - 3600))
     _zpun_min_age_cache_put npm freshpkg 1.0.0 \$fresh
     _zpun_min_age_satisfied npm freshpkg 1.0.0 && echo PASS || echo BLOCK
@@ -88,7 +88,7 @@ teardown() { teardown_env ; }
 
 @test "satisfied is fail-open when version is the '?' sentinel" {
   run run_plugin_zsh "
-    zsh_pkg_update_nag_min_age_days=7
+    zsh_pkg_update_nag_min_age=7
     _zpun_min_age_satisfied brew gh '?' && echo PASS || echo BLOCK
   "
   [ "$status" -eq 0 ]
@@ -99,7 +99,7 @@ teardown() { teardown_env ; }
   # No fixtures will resolve "noexist@999.999.999" — npm fixture's view command
   # only honors ZPUN_FIXTURE_NPM_AGE=missing for empty output.
   run run_plugin_zsh "
-    zsh_pkg_update_nag_min_age_days=7
+    zsh_pkg_update_nag_min_age=7
     ZPUN_FIXTURE_NPM_AGE=missing
     _zpun_min_age_satisfied npm noexist 999.999.999 && echo PASS || echo BLOCK
   "
@@ -266,7 +266,7 @@ teardown() { teardown_env ; }
 @test "prefetch_brew handles many names via REST fallback (parallelism=4)" {
   # Tests the unauth REST path: gh isn't on the test PATH, so prefetch_brew
   # skips the GraphQL fast path and exercises the chunked subshell fan-out.
-  ZSH_PKG_UPDATE_NAG_LOOKUP_PARALLELISM=4 run run_plugin_zsh '
+  ZSH_PKG_UPDATE_NAG_MIN_AGE_LOOKUP_PARALLELISM=4 run run_plugin_zsh '
     _zpun_min_age_prefetch_brew \
       cmake 4.3.2 gh 2.62.0 fd 10.2.0 ffmpeg 8.1_1 deno 2.7.13 \
       harfbuzz 14.2.0 nss 3.123.1 giflib 6.1.3 blender 5.1.1
@@ -278,7 +278,7 @@ teardown() { teardown_env ; }
 }
 
 @test "prefetch_brew with parallelism=1 still produces correct results" {
-  ZSH_PKG_UPDATE_NAG_LOOKUP_PARALLELISM=1 run run_plugin_zsh '
+  ZSH_PKG_UPDATE_NAG_MIN_AGE_LOOKUP_PARALLELISM=1 run run_plugin_zsh '
     _zpun_min_age_prefetch_brew cmake 4.3.2 gh 2.62.0 fd 10.2.0
     print -r -- COUNT=$(_zpun_min_age_cache_count)
     _zpun_min_age_cache_get brew gh 2.62.0
