@@ -60,6 +60,38 @@ teardown() { teardown_env ; }
   [[ "$output" == *$'gem\trails\t7.1.0\t7.2.0'* ]]
 }
 
+@test "min-age threshold drops fresh updates from the aggregated output" {
+  # ZPUN_FIXTURE_NPM_AGE=fresh + ZPUN_FIXTURE_CURL=fresh make every age-lookup
+  # return "now"; with global threshold = ~3 years (in days), every row should
+  # be filtered out. Brew gets the threshold too but its lookup will fail-open
+  # (no stubbed git repo), so we expect brew rows to still appear.
+  ZPUN_FIXTURE_NPM_AGE=fresh ZPUN_FIXTURE_CURL=fresh \
+    run run_plugin_zsh "
+      export zsh_pkg_update_nag_gem=all
+      zsh_pkg_update_nag_min_age_npm=999
+      zsh_pkg_update_nag_min_age_uv=999
+      zsh_pkg_update_nag_min_age_gem=999
+      _zpun_collect_outdated
+    "
+  [ "$status" -eq 0 ]
+  [[ "$output" != *$'npm\t'* ]]
+  [[ "$output" != *$'uv\t'* ]]
+  [[ "$output" != *$'gem\t'* ]]
+  [[ "$output" == *$'brew\tgh\t'* ]]   # brew is unfiltered (no min_age_brew set)
+}
+
+@test "min-age per-manager override of 0 disables filtering for that manager only" {
+  ZPUN_FIXTURE_NPM_AGE=fresh \
+    run run_plugin_zsh "
+      zsh_pkg_update_nag_min_age_days=999
+      zsh_pkg_update_nag_min_age_npm=0
+      _zpun_collect_outdated
+    "
+  [ "$status" -eq 0 ]
+  # npm rows survive because the per-manager override forces gating off.
+  [[ "$output" == *$'npm\tpnpm'* ]]
+}
+
 @test "_zpun_run_upgrade builds correct command per manager" {
   run run_plugin_zsh "_zpun_run_upgrade brew pnpm; _zpun_run_upgrade npm typescript; _zpun_run_upgrade gem rails"
   [ "$status" -eq 0 ]

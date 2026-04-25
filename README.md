@@ -111,6 +111,19 @@ zsh_pkg_update_nag_gem=off
 
 # Example: watch only two npm globals.
 # zsh_pkg_update_nag_npm=(typescript prettier)
+
+# Minimum release age (days). Hides updates younger than this — gives
+# fresh releases time to be yanked or flagged before you adopt them.
+# Default 0 (off). 7 is a sensible baseline; see the section below.
+zsh_pkg_update_nag_min_age_days=0
+
+# Per-manager overrides (optional). When set — even to 0 — these win over
+# the global. Useful to disable the gate for managers whose lookup is the
+# slowest (npm) or where you trust the curation (brew/homebrew-core).
+# zsh_pkg_update_nag_min_age_brew=0
+# zsh_pkg_update_nag_min_age_npm=14
+# zsh_pkg_update_nag_min_age_uv=7
+# zsh_pkg_update_nag_min_age_gem=7
 ```
 
 ### Environment variables
@@ -142,6 +155,57 @@ What you'll see:
 - **`--now`** always runs synchronously regardless of this setting, so progress output remains visible.
 
 Results are written atomically to `$XDG_STATE_HOME/zsh-pkg-update-nag/pending_updates` and consumed once displayed. If you open several shells at once, the rate-limit lock ensures only one background scan runs; subsequent shells will pick up the same results when their first prompt fires.
+
+#### Minimum release age (`zsh_pkg_update_nag_min_age_days`)
+
+Optional supply-chain safety net. When set to N > 0, an update is only surfaced once its `latest` version has been published for at least N days — fresh releases get a quarantine window during which yanked or compromised versions usually surface and get pulled. Off by default (`0`).
+
+```zsh
+# ~/.config/zsh-pkg-update-nag/config.zsh
+zsh_pkg_update_nag_min_age_days=7      # global baseline
+zsh_pkg_update_nag_min_age_npm=14      # stricter for npm specifically
+zsh_pkg_update_nag_min_age_brew=0      # off for brew
+```
+
+Per-manager overrides (`zsh_pkg_update_nag_min_age_<manager>`) win over the global, even when set to `0`. Leave a per-manager variable unset to inherit the global.
+
+##### Prefer the upstream feature when one exists
+
+If your package manager has minimum-release-age built in, use **that** for those packages — it acts at install time (so it also protects ad-hoc installs) and avoids the per-package lookup this plugin does. This plugin's setting is the gap-filler for managers without native support.
+
+| Manager | Native minimum-age support | Recommendation |
+|---|---|---|
+| brew | None (homebrew/core is human-curated) | Use this plugin's setting |
+| npm | None | Use this plugin's setting |
+| uv | [`--exclude-newer DATE`](https://docs.astral.sh/uv/reference/cli/#uv-pip-install--exclude-newer) (per-invocation; no persistent config) | This plugin's setting is easier for ongoing use |
+| gem | None | Use this plugin's setting |
+| _(out of scope)_ pnpm | [`minimumReleaseAge`](https://pnpm.io/settings#minimumreleaseage) in `.npmrc` | Prefer pnpm's native setting |
+| _(out of scope)_ cargo | [`--minimum-release-age`](https://doc.rust-lang.org/cargo/commands/cargo-install.html) | Prefer cargo's native flag |
+
+##### Performance
+
+Each outdated package needs one publish-date lookup the first time it's seen. Lookups are cached forever in `$XDG_STATE_HOME/zsh-pkg-update-nag/age_cache.tsv` (publish dates don't change), so steady-state cost is near-zero — most users see ~95% cache hits after a day or two of use.
+
+| Manager | Lookup source | Cold-cache cost per package |
+|---|---|---|
+| brew | One batched `brew info --json=v2` for the file paths, then GitHub commits API per package on `Homebrew/homebrew-{core,cask}` (uses `gh` if installed, else `curl`) | ~1 s per package (the `brew info` call is a single fixed ~1 s regardless of count) |
+| npm | `npm view <pkg> time --json` + `jq` | ~350–650 ms (network) |
+| uv | `https://pypi.org/pypi/<pkg>/json` via `curl` + `jq` | ~100–300 ms (network) |
+| gem | `https://rubygems.org/api/v1/versions/<pkg>.json` via `curl` + `jq` | ~100–300 ms (network) |
+
+Worst-case impact on shell startup: cold cache + 35 outdated brew packages = roughly 40 s of extra latency. **Run with `ZSH_PKG_UPDATE_NAG_BACKGROUND=1` if you enable this** — the scan moves off the startup path entirely and the latency becomes invisible. Each provider call is also wrapped by the existing `ZSH_PKG_UPDATE_NAG_PROVIDER_TIMEOUT` (default 10 s) so a hung HTTP request can never extend startup beyond that cap. If a single manager is too slow for synchronous use, set its per-manager override to `0` to disable the lookup for it specifically.
+
+###### GitHub rate limit (brew only)
+
+The brew lookup hits the GitHub commits API. Without `gh`, the limit is **60 requests/hour per IP** (unauthenticated) — enough for ~30–60 unique brew packages per hour. With `gh` installed *and* `gh auth login` completed, the limit jumps to **5000/hour**, which is effectively unbounded for normal use. If you're running min-age for brew, installing `gh` is strongly recommended.
+
+##### Failure mode: fail-open
+
+If we can't determine an age (network down, missing `curl`/`jq`, third-party brew tap, malformed registry response), the update is **shown anyway** and a line is written to the debug log. Hiding updates indefinitely because the network's down would be strictly worse than current behavior.
+
+##### Brew caveat
+
+The brew signal is the formula file's commit time in `Homebrew/homebrew-core` (or `homebrew-cask`), not the upstream project's release time. For homebrew-core that's usually within hours of upstream; for third-party taps the lookup falls back to fail-open since we don't enumerate every tap path. The lookup goes through the GitHub commits API rather than `git log` because Homebrew 4.0+ no longer clones the tap locally by default.
 
 ## Subcommands
 
@@ -191,7 +255,7 @@ Nothing happens on shell start?
 ## Requirements
 
 - **zsh** 5.0 or newer.
-- **Optional:** `jq` (improves Homebrew version-delta display — without it, brew versions show as `?`), `timeout` / `gtimeout` (wraps provider calls with a 10s timeout). On macOS, `gtimeout` is part of `coreutils`: `brew install coreutils`.
+- **Optional:** `jq` (improves Homebrew version-delta display — without it, brew versions show as `?`; also required for any `min_age_days > 0` lookup), `curl` (required for `min_age_days > 0` on brew/uv/gem; ships in `/usr/bin/curl` on macOS and most Linuxes), [`gh`](https://cli.github.com/) (raises brew's GitHub API rate limit from 60/hour to 5000/hour; strongly recommended if you set `min_age_days > 0` for brew), `timeout` / `gtimeout` (wraps provider calls with a 10s timeout). On macOS, `gtimeout` is part of `coreutils`: `brew install coreutils`.
 
 ## Limitations / roadmap
 

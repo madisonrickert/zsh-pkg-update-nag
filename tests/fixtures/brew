@@ -51,6 +51,32 @@ JSON
     echo "brew fixture upgraded: $2"
     exit 0
     ;;
+  info)
+    # `brew info --json=v2 <name1> [<name2> ...]` for the min-age lookup
+    # (single per-row OR batched prefetch). Returns one combined JSON
+    # response with formulae[] and casks[] arrays, mirroring real brew.
+    shift
+    f_entries=""
+    c_entries=""
+    for arg in "$@"; do
+      case "$arg" in
+        --cask|--formula|--json=v2|--json) continue ;;
+      esac
+      first=$(printf '%s' "$arg" | cut -c1)
+      case "$arg" in
+        *@latest|blender|fxfactory|onyx|*-license-manager|*-product-manager|shutter-encoder)
+          [ -z "$c_entries" ] || c_entries="$c_entries,"
+          c_entries="${c_entries}{\"name\":\"$arg\",\"ruby_source_path\":\"Casks/$first/$arg.rb\"}"
+          ;;
+        *)
+          [ -z "$f_entries" ] || f_entries="$f_entries,"
+          f_entries="${f_entries}{\"name\":\"$arg\",\"ruby_source_path\":\"Formula/$first/$arg.rb\"}"
+          ;;
+      esac
+    done
+    printf '{"formulae":[%s],"casks":[%s]}\n' "$f_entries" "$c_entries"
+    exit 0
+    ;;
   *)
     exit 0
     ;;

@@ -11,6 +11,7 @@ fpath=("$_ZPUN_DIR" $fpath)
 source "$_ZPUN_DIR/lib/config.zsh"
 source "$_ZPUN_DIR/lib/rate_limit.zsh"
 source "$_ZPUN_DIR/lib/ui.zsh"
+source "$_ZPUN_DIR/lib/min_age.zsh"
 source "$_ZPUN_DIR/lib/providers/brew.zsh"
 source "$_ZPUN_DIR/lib/providers/npm.zsh"
 source "$_ZPUN_DIR/lib/providers/uv.zsh"
@@ -44,8 +45,8 @@ _zpun_collect_outdated() {
   emulate -L zsh
   setopt local_options
 
-  local manager provider_fn result line
-  local -a timeout_cmd
+  local manager provider_fn result line pkg_name pkg_latest threshold
+  local -a timeout_cmd outdated_rows prefetch_args
   timeout_cmd=( ${(z)"$(_zpun_timeout_prefix)"} )
 
   for manager in brew npm uv gem; do
@@ -56,10 +57,32 @@ _zpun_collect_outdated() {
     _zpun_ui_status "Checking ${_ZPUN_MANAGER_LABELS[$manager]:-$manager}…"
 
     if result=$( "${timeout_cmd[@]}" zsh -c "source '$_ZPUN_DIR/lib/config.zsh'; _zpun_config_load; source '$_ZPUN_DIR/lib/providers/${manager}.zsh'; $provider_fn" 2>>"$(_zpun_debug_log_path)" ); then
+      outdated_rows=()
       while IFS= read -r line; do
         [[ -n $line ]] || continue
-        print -r -- "${manager}"$'\t'"${line}"
+        outdated_rows+=( "$line" )
       done <<< "$result"
+
+      (( ${#outdated_rows} )) || continue
+
+      # Prefetch publish-date lookups in one batch when min-age is on for
+      # this manager — the per-row _zpun_min_age_satisfied calls below then
+      # see cache hits instead of going to brew/npm/curl one by one.
+      threshold=$(_zpun_min_age_threshold "$manager")
+      if (( threshold > 0 )); then
+        prefetch_args=()
+        for line in "${outdated_rows[@]}"; do
+          prefetch_args+=( "${line%%$'\t'*}" "${line##*$'\t'}" )
+        done
+        _zpun_min_age_prefetch "$manager" "${prefetch_args[@]}"
+      fi
+
+      for line in "${outdated_rows[@]}"; do
+        pkg_name=${line%%$'\t'*}
+        pkg_latest=${line##*$'\t'}
+        _zpun_min_age_satisfied "$manager" "$pkg_name" "$pkg_latest" || continue
+        print -r -- "${manager}"$'\t'"${line}"
+      done
     else
       _zpun_debug_log "provider $manager exited non-zero"
     fi

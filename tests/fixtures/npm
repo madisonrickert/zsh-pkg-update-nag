@@ -5,6 +5,39 @@ case "$1 $2" in
     echo "/tmp/npm-prefix"
     exit 0
     ;;
+  "view "*)
+    # `npm view <pkg> time --json` for the min-age lookup. Returns the JSON
+    # object mapping version strings to ISO-8601 timestamps, mirroring real
+    # npm. Honors ZPUN_FIXTURE_NPM_AGE: default|old → 2020 stamps, fresh →
+    # now, missing → empty object (no version keys), fail → exit 1.
+    case "${ZPUN_FIXTURE_NPM_AGE:-default}" in
+      fresh)
+        ts=$(date -u +'%Y-%m-%dT%H:%M:%S.000Z')
+        ;;
+      missing)
+        printf '{"created":"2020-01-01T00:00:00.000Z","modified":"2020-01-01T00:00:00.000Z"}\n'
+        exit 0
+        ;;
+      fail)
+        exit 1
+        ;;
+      *)
+        ts='2020-01-15T12:34:56.000Z'
+        ;;
+    esac
+    # Embed every version that the test fixtures reference. Real npm returns
+    # the entire history; we list just enough that tests find their key.
+    printf '{'
+    printf '"created":"2012-10-01T15:35:39.553Z",'
+    printf '"modified":"%s",' "$ts"
+    printf '"5.5.0":"%s",' "$ts"
+    printf '"5.4.0":"%s",' "$ts"
+    printf '"9.5.1":"%s",' "$ts"
+    printf '"9.0.0":"%s",' "$ts"
+    printf '"1.48.0":"%s"'  "$ts"
+    printf '}\n'
+    exit 0
+    ;;
 esac
 case "$1" in
   outdated)

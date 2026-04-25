@@ -1,0 +1,95 @@
+#!/bin/sh
+# Fixture: pretends to be `curl` for PyPI / RubyGems registry calls used by
+# the min-age lookups. Honors ZPUN_FIXTURE_CURL:
+#
+#   default | old   — emit a 2020 upload_time (passes any realistic threshold)
+#   fresh           — emit a current upload_time (fails any positive threshold)
+#   missing         — emit valid JSON without the requested version
+#   fail            — exit non-zero (network failure simulation)
+#
+# Recognizes URLs of the form:
+#   https://pypi.org/pypi/<pkg>/json
+#   https://rubygems.org/api/v1/versions/<pkg>.json
+#   https://api.github.com/repos/Homebrew/homebrew-(core|cask)/commits?path=...
+# Anything else falls through to a silent exit 0.
+
+mode=${ZPUN_FIXTURE_CURL:-default}
+
+# Find the last argument starting with http(s):// — that's the URL we're hitting.
+url=
+for arg in "$@"; do
+  case "$arg" in
+    http://*|https://*) url=$arg ;;
+  esac
+done
+
+[ -n "$url" ] || exit 0
+
+case "$mode" in
+  fail) exit 22 ;;  # 22 == HTTP error per curl convention
+esac
+
+# Pick the timestamp string the response should embed.
+case "$mode" in
+  fresh)
+    # Now (UTC) in ISO-8601. POSIX `date -u` is portable enough for this.
+    ts=$(date -u +'%Y-%m-%dT%H:%M:%S')
+    ;;
+  *)
+    ts='2020-01-15T12:34:56'
+    ;;
+esac
+
+# Extract the package name and (for PyPI) the requested version. The version
+# is encoded only in the request, not the URL, so we accept whatever comes in
+# the JSON body. We embed the requested version as the key in the releases dict
+# (PyPI) or the only entry in the array (RubyGems).
+case "$url" in
+  *pypi.org/pypi/*/json)
+    # URL: https://pypi.org/pypi/<pkg>/json — the version isn't in the URL,
+    # so we fan out to a few common ones plus a "*" sentinel the caller can
+    # rely on. The min_age lookup uses jq with --arg to pick the right key.
+    if [ "$mode" = "missing" ]; then
+      printf '{"releases":{"0.0.0":[{"upload_time":"%s"}]}}\n' "$ts"
+    else
+      # Cover every version that appears in the test fixtures + a permissive
+      # wildcard via jq (the lookup queries by exact key, so we just enumerate).
+      printf '{"releases":{'
+      printf '"0.6.4":[{"upload_time":"%s"}],' "$ts"
+      printf '"0.6.0":[{"upload_time":"%s"}],' "$ts"
+      printf '"1.0.0":[{"upload_time":"%s"}]'  "$ts"
+      printf '}}\n'
+    fi
+    ;;
+  *rubygems.org/api/v1/versions/*.json)
+    if [ "$mode" = "missing" ]; then
+      printf '[{"number":"0.0.0","created_at":"%s"}]\n' "$ts"
+    else
+      printf '['
+      printf '{"number":"7.2.0","created_at":"%s"},' "$ts"
+      printf '{"number":"3.13.0","created_at":"%s"},' "$ts"
+      printf '{"number":"1.0.0","created_at":"%s"}'   "$ts"
+      printf ']\n'
+    fi
+    ;;
+  *api.github.com/repos/Homebrew/homebrew-core/commits*)
+    # The brew lookup tries homebrew-core first, then homebrew-cask. We
+    # honor the same modes — `missing` causes core to 404 (empty array)
+    # so the lookup falls through to the cask path.
+    if [ "$mode" = "missing" ]; then
+      printf '[]\n'
+    else
+      printf '[{"commit":{"committer":{"date":"%sZ"}}}]\n' "$ts"
+    fi
+    ;;
+  *api.github.com/repos/Homebrew/homebrew-cask/commits*)
+    if [ "$mode" = "missing" ]; then
+      printf '[]\n'
+    else
+      printf '[{"commit":{"committer":{"date":"%sZ"}}}]\n' "$ts"
+    fi
+    ;;
+  *)
+    exit 0
+    ;;
+esac

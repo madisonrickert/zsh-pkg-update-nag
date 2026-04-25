@@ -11,6 +11,7 @@ _zpun_config_load() {
   : ${zsh_pkg_update_nag_npm:=all}
   : ${zsh_pkg_update_nag_uv:=all}
   : ${zsh_pkg_update_nag_gem:=off}
+  : ${zsh_pkg_update_nag_min_age_days:=0}
 
   local config_path=${ZSH_PKG_UPDATE_NAG_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/zsh-pkg-update-nag/config.zsh}
   if [[ -r $config_path ]]; then
@@ -101,6 +102,12 @@ _zpun_pending_path() {
   emulate -L zsh
   setopt local_options
   print -r -- "$(_zpun_state_dir)/pending_updates"
+}
+
+_zpun_age_cache_path() {
+  emulate -L zsh
+  setopt local_options
+  print -r -- "$(_zpun_state_dir)/age_cache.tsv"
 }
 
 _zpun_debug_log_path() {

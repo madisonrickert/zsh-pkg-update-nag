@@ -238,9 +238,17 @@ _zpun_ui_print_env() {
   print -r -- "  plugin dir:    $_ZPUN_DIR"
   print -r -- "  state dir:     $(_zpun_state_dir)"
   print -r -- "  interval:      ${zsh_pkg_update_nag_interval_hours}h"
+  local global_age=${zsh_pkg_update_nag_min_age_days:-0}
+  local cached_count=0
+  (( $+functions[_zpun_min_age_cache_count] )) && cached_count=$(_zpun_min_age_cache_count)
+  if (( global_age > 0 )); then
+    print -r -- "  min age:       ${global_age}d global (${cached_count} cached)"
+  else
+    print -r -- "  min age:       off (global; ${cached_count} cached)"
+  fi
   print -r -- "  stamp:         $stamp_status"
   print -r -- "  managers:"
-  local m mode allow available
+  local m mode allow available age_label age_threshold
   for m in brew npm uv gem; do
     mode="off"
     if _zpun_manager_enabled "$m"; then
@@ -253,7 +261,11 @@ _zpun_ui_print_env() {
     fi
     available="missing"
     (( $+commands[$m] )) && available="available"
-    print -r -- "    $m: $mode ($available)"
+    age_threshold=0
+    (( $+functions[_zpun_min_age_threshold] )) && age_threshold=$(_zpun_min_age_threshold "$m")
+    age_label=""
+    (( age_threshold > 0 )) && age_label=" min-age=${age_threshold}d"
+    print -r -- "    $m: $mode ($available)$age_label"
   done
 }
 
