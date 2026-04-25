@@ -142,15 +142,3 @@ Whole-document readability sweep — the doc has grown organically as
 features land and could benefit from a fresh read for ordering, redundancy,
 and tone. No specific fix; flagged for a deliberate revision.
 
-## Lazy-source provider files
-
-`zsh-pkg-update-nag.plugin.zsh` sources `lib/providers/{brew,npm,uv,gem}.zsh`
-at plugin load time, but `_zpun_collect_outdated` re-sources each one inside
-its own `zsh -c` subshell when it runs. The top-level sources exist so that
-`(( $+functions[_zpun_provider_$manager] ))` returns true in the parent — but
-that guard is redundant given the subshell re-source.
-
-Dropping the four top-level sources saves a couple of ms at plugin load and
-the single source-of-truth lives inside `_zpun_collect_outdated`. Low
-priority, but a free win in background mode where every millisecond at load
-is more visible.

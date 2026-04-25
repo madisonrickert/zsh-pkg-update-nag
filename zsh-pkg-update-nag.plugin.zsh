@@ -12,10 +12,10 @@ source "$_ZPUN_DIR/lib/config.zsh"
 source "$_ZPUN_DIR/lib/rate_limit.zsh"
 source "$_ZPUN_DIR/lib/ui.zsh"
 source "$_ZPUN_DIR/lib/min_age.zsh"
-source "$_ZPUN_DIR/lib/providers/brew.zsh"
-source "$_ZPUN_DIR/lib/providers/npm.zsh"
-source "$_ZPUN_DIR/lib/providers/uv.zsh"
-source "$_ZPUN_DIR/lib/providers/gem.zsh"
+# Provider files (lib/providers/*.zsh) are intentionally NOT sourced here.
+# _zpun_collect_outdated re-sources the relevant one inside its per-manager
+# timeout subshell, which is the only context that calls them — sourcing them
+# at plugin load is a few ms wasted on every shell startup.
 
 # _zpun_should_run — returns 0 if the current environment is a good place to nag.
 # Honors ZSH_PKG_UPDATE_NAG_DISABLE unconditionally; skips environmental guards
@@ -52,7 +52,6 @@ _zpun_collect_outdated() {
   for manager in brew npm uv gem; do
     _zpun_manager_enabled "$manager" || continue
     provider_fn="_zpun_provider_${manager}"
-    (( $+functions[$provider_fn] )) || continue
 
     _zpun_progress_emit "Checking ${_ZPUN_MANAGER_LABELS[$manager]:-$manager}…"
 
