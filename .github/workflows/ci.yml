@@ -1,0 +1,67 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  syntax:
+    name: zsh -n parse check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install zsh
+        run: sudo apt-get update && sudo apt-get install -y zsh
+      - name: Parse-check every shipped zsh file
+        run: |
+          set -euo pipefail
+          failed=0
+          while IFS= read -r -d '' f; do
+            echo "::group::zsh -n $f"
+            zsh -n "$f" || failed=1
+            echo "::endgroup::"
+          done < <(find . -type f \( -name '*.zsh' -o -name '_zsh-pkg-update-nag' \) -not -path './.git/*' -print0)
+          exit $failed
+
+  test:
+    name: bats (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install bats and zsh (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y bats zsh
+      - name: Install bats (macOS)
+        if: runner.os == 'macOS'
+        run: brew install bats-core
+      - name: Print versions
+        run: |
+          zsh --version
+          bats --version
+      - name: Run bats suite
+        run: bats tests/
+
+  shellcheck:
+    name: shellcheck (POSIX fixtures + helpers)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: shellcheck
+        run: |
+          shellcheck --version
+          shellcheck tests/helpers.bash
+          shellcheck \
+            tests/fixtures/brew \
+            tests/fixtures/curl \
+            tests/fixtures/gem \
+            tests/fixtures/npm \
+            tests/fixtures/uv
