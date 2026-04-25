@@ -42,3 +42,23 @@ _zpun_provider_npm() {
     print -r -- "${name}"$'\t'"${current}"$'\t'"${latest}"
   done <<< "$raw" | _zpun_filter_by_allowlist npm
 }
+
+# _zpun_min_age_lookup_npm <name> <version> — query the npm registry through
+# the npm CLI (which respects user proxy / auth config). We fetch the full
+# `time` map as JSON and pick the version key with jq, because npm's
+# property-accessor syntax (`time.<version>`) treats dots as path separators
+# and silently returns nothing on real semver versions.
+_zpun_min_age_lookup_npm() {
+  emulate -L zsh
+  setopt local_options
+
+  local name=$1 version=$2
+  (( $+commands[npm] && $+commands[jq] )) || return 1
+
+  local map iso
+  map=$(npm view "$name" time --json 2>/dev/null) || return 1
+  [[ -n $map ]] || return 1
+  iso=$(print -r -- "$map" | jq -r --arg v "$version" '.[$v] // empty' 2>/dev/null)
+  [[ -n $iso && $iso != null ]] || return 1
+  _zpun_min_age_parse_iso8601 "$iso"
+}

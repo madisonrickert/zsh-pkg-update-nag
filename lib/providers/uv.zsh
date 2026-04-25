@@ -32,3 +32,22 @@ _zpun_provider_uv() {
     fi
   done <<< "$raw" | _zpun_filter_by_allowlist uv
 }
+
+# _zpun_min_age_lookup_uv <name> <version> — PyPI's JSON API. uv has no flag
+# for this; we hit pypi.org directly.
+_zpun_min_age_lookup_uv() {
+  emulate -L zsh
+  setopt local_options
+
+  local name=$1 version=$2
+  (( $+commands[curl] && $+commands[jq] )) || return 1
+
+  local json
+  json=$(curl -fsSL --max-time 5 "https://pypi.org/pypi/${name}/json" 2>/dev/null) || return 1
+  [[ -n $json ]] || return 1
+
+  local iso
+  iso=$(print -r -- "$json" | jq -r --arg v "$version" '.releases[$v][0].upload_time // empty' 2>/dev/null)
+  [[ -n $iso ]] || return 1
+  _zpun_min_age_parse_iso8601 "$iso"
+}

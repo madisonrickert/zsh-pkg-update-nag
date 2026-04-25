@@ -23,3 +23,21 @@ _zpun_provider_gem() {
     fi
   done <<< "$raw" | _zpun_filter_by_allowlist gem
 }
+
+# _zpun_min_age_lookup_gem <name> <version> — RubyGems JSON API.
+_zpun_min_age_lookup_gem() {
+  emulate -L zsh
+  setopt local_options
+
+  local name=$1 version=$2
+  (( $+commands[curl] && $+commands[jq] )) || return 1
+
+  local json
+  json=$(curl -fsSL --max-time 5 "https://rubygems.org/api/v1/versions/${name}.json" 2>/dev/null) || return 1
+  [[ -n $json ]] || return 1
+
+  local iso
+  iso=$(print -r -- "$json" | jq -r --arg v "$version" '.[] | select(.number==$v) | .created_at' 2>/dev/null | head -n 1)
+  [[ -n $iso ]] || return 1
+  _zpun_min_age_parse_iso8601 "$iso"
+}

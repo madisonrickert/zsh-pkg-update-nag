@@ -301,6 +301,26 @@ teardown() { teardown_env ; }
   [[ "$output" == *"BLOCK"* ]]
 }
 
+@test "collector eagerly sources provider files for min-age lookups" {
+  # Regression: per-manager publish-date lookups now live in the provider
+  # files rather than min_age.zsh. _zpun_collect_outdated must source each
+  # enabled provider in the parent context whenever min-age is active so
+  # _zpun_min_age_satisfied can resolve _zpun_min_age_lookup_<m>. This test
+  # unfunctions the npm lookup post-load, then triggers the collector and
+  # asserts the function is re-defined — proving the collector's source
+  # step (not the test harness's eager-source) is doing the work.
+  run run_plugin_zsh "
+    zsh_pkg_update_nag_min_age_npm=7
+    unfunction _zpun_min_age_lookup_npm 2>/dev/null
+    (( \$+functions[_zpun_min_age_lookup_npm] )) && echo BEFORE_DEFINED || echo BEFORE_UNDEFINED
+    _zpun_collect_outdated >/dev/null
+    (( \$+functions[_zpun_min_age_lookup_npm] )) && echo AFTER_DEFINED || echo AFTER_UNDEFINED
+  "
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"BEFORE_UNDEFINED"* ]]
+  [[ "$output" == *"AFTER_DEFINED"* ]]
+}
+
 @test "satisfied uses uv lookup (via curl fixture) and blocks fresh entries" {
   ZPUN_FIXTURE_CURL=fresh run run_plugin_zsh "
     zsh_pkg_update_nag_min_age_uv=7

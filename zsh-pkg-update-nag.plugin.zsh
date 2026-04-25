@@ -75,10 +75,26 @@ _zpun_collect_outdated() {
 
   # Source min-age helpers on demand. When the feature is fully off (the
   # default), we skip the whole file and the per-row gating below.
+  #
+  # Each provider's per-manager publish-date lookup
+  # (_zpun_min_age_lookup_<m>) and any prefetch hook
+  # (_zpun_min_age_prefetch_<m>) live in lib/providers/<m>.zsh, alongside
+  # _zpun_provider_<m>. The provider files are also sourced inside the
+  # per-manager timeout subshell below for the scan; that's a separate
+  # process so the lookups defined there aren't visible to the parent.
+  # When min-age is active we additionally source each enabled provider
+  # in the parent so _zpun_min_age_satisfied / the prefetch dispatcher
+  # can resolve the per-manager hooks. Sub-ms each on a 1µs/line basis;
+  # gated on the same _zpun_min_age_active check so off-by-default users
+  # pay nothing.
   local _have_min_age=0
   if _zpun_min_age_active; then
     source "$_ZPUN_DIR/lib/min_age.zsh"
     _have_min_age=1
+    for manager in brew npm uv gem; do
+      _zpun_manager_enabled "$manager" || continue
+      source "$_ZPUN_DIR/lib/providers/${manager}.zsh"
+    done
   fi
 
   for manager in brew npm uv gem; do
