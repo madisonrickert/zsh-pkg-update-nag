@@ -8,13 +8,14 @@
 A zsh plugin that surfaces outdated global packages at the start of a shell session and offers a one-keystroke `Y/n/s` upgrade. Rate-limited to once every four hours, skipped in SSH and scripts, and never blocks shell startup.
 
 ```
-▲ 3 updates available
+▲ 4 updates available
 
   Homebrew
-    gh      2.60.0 → 2.62.0
-    fd      10.1.0 → 10.2.0
+    gh           2.60.0 → 2.62.0
+    fd           10.1.0 → 10.2.0
   npm (global)
-    pnpm    9.0.0  → 9.5.1
+    pnpm         9.0.0  → 9.5.1
+    claude-code  2.1.0  → 2.1.1
 
   Update all? [Y/n/s] ›
 ```
