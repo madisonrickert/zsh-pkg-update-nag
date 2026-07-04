@@ -15,6 +15,15 @@ _zpun_config_load() {
   : ${zsh_pkg_update_nag_cargo:=all}
   : ${zsh_pkg_update_nag_min_age:=0}
 
+  # Presentation mode at the session-start nag:
+  #   prompt   — render the summary and block on the [Y/n/s] upgrade prompt (default).
+  #   reminder — render the summary and print a one-line instruction to upgrade
+  #              on demand; never prompt. Nothing is read from the terminal.
+  : ${zsh_pkg_update_nag_mode:=prompt}
+  # Command suggested by reminder mode. Point it at whatever entry point you use
+  # to run the upgrade interactively (an alias, a wrapper function, etc.).
+  : ${zsh_pkg_update_nag_reminder_command:="zsh-pkg-update-nag --now"}
+
   local config_path=${ZSH_PKG_UPDATE_NAG_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/zsh-pkg-update-nag/config.zsh}
   if [[ -r $config_path ]]; then
     source "$config_path"

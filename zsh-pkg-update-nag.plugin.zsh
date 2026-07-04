@@ -252,11 +252,11 @@ _zpun_main() {
   outdated=( ${(f)"$(_zpun_collect_outdated)"} )
 
   if (( ${#outdated} )); then
-    # Capture stays active through the prompt so chars typed between the
-    # scan ending and the y/n/s read don't echo or leak into the read.
-    # _zpun_ui_prompt_and_upgrade calls _zpun_input_capture_end after the
-    # answer is collected and before any upgrade commands run.
-    _zpun_ui_prompt_and_upgrade "${outdated[@]}"
+    # Capture stays active through the render (and, in prompt mode, the y/n/s
+    # read) so keystrokes typed after the scan don't echo mid-output or leak
+    # into the read. _zpun_ui_present owns the teardown: it ends the capture
+    # after its mode handler returns, replaying type-ahead onto the next prompt.
+    _zpun_ui_present "${outdated[@]}"
   else
     _zpun_input_capture_end
   fi
@@ -346,7 +346,7 @@ _zpun_precmd_nag() {
       local -a outdated
       outdated=( ${(f)content} )
       outdated=( ${outdated:#} )
-      (( ${#outdated} )) && _zpun_ui_prompt_and_upgrade "${outdated[@]}"
+      (( ${#outdated} )) && _zpun_ui_present "${outdated[@]}"
       ;;
   esac
 }
@@ -424,6 +424,13 @@ zsh-pkg-update-nag() {
       ;;
     --now|now|--force|force)
       _zpun_config_load
+      # On-demand invocation is an explicit request to act, so always take the
+      # interactive prompt path even when the ambient mode is `reminder` (whose
+      # whole purpose is to defer the upgrade to a command like this one). We
+      # can't force that with `zsh_pkg_update_nag_mode=prompt` here: _zpun_main
+      # re-runs _zpun_config_load, which re-sources the user's config and would
+      # clobber the override. _zpun_ui_present dispatches on FORCE instead, which
+      # config load never touches.
       ZSH_PKG_UPDATE_NAG_FORCE=1 _zpun_main
       ;;
     --help|-h|help|'')

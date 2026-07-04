@@ -109,6 +109,15 @@ Config file location: `${XDG_CONFIG_HOME:-$HOME/.config}/zsh-pkg-update-nag/conf
 # How often to check (hours). Default: 4.
 zsh_pkg_update_nag_interval_hours=4
 
+# Presentation at the session-start nag. Default: prompt.
+#   prompt   — render the summary and offer the [Y/n/s] upgrade prompt.
+#   reminder — render the summary and print a one-line instruction to upgrade
+#              on demand; never prompt, never read the terminal.
+zsh_pkg_update_nag_mode=prompt
+# Command suggested by reminder mode. Default: "zsh-pkg-update-nag --now".
+# Point it at whatever you use to run the upgrade interactively.
+# zsh_pkg_update_nag_reminder_command="zsh-pkg-update-nag --now"
+
 # Per-manager: "off", "all", or a zsh array / whitespace-separated list of
 # package names to watch. Default shown.
 zsh_pkg_update_nag_brew=all
@@ -141,6 +150,30 @@ zsh_pkg_update_nag_min_age=0
 | `ZSH_PKG_UPDATE_NAG_MIN_AGE_LOOKUP_PARALLELISM` | Concurrency for the brew min-age REST fallback (default `6`). Only applies when neither `gh` nor `$GITHUB_TOKEN` is set. |
 | `ZSH_PKG_UPDATE_NAG_MIN_AGE_LIST_TTL` | Seconds to cache a package's version list in resolve mode before refetching (default `86400`). Lower values pick up newly-aged releases sooner at the cost of more registry calls. |
 | `NO_COLOR=1` | Disable color output (per the [NO_COLOR](https://no-color.org) spec). |
+
+## Reminder mode
+
+If the inline `[Y/n/s]` prompt at shell startup is more interruption than you
+want, set `zsh_pkg_update_nag_mode=reminder`. Each session still lists what's
+outdated, but instead of prompting it prints a one-line instruction and returns
+control immediately:
+
+```
+▲ 2 updates available
+
+  Homebrew
+    gh           2.60.0 → 2.62.0
+  npm (global)
+    pnpm         9.0.0  → 9.5.1
+
+  Run  zsh-pkg-update-nag --now  to upgrade.
+```
+
+Nothing is read from the terminal, so the notice never competes with what you're
+typing. Running the suggested command (`zsh-pkg-update-nag --now`) always takes
+the interactive prompt path, regardless of the mode. That's how you actually
+apply the upgrades. Point `zsh_pkg_update_nag_reminder_command` at an alias or
+wrapper function if you drive upgrades through something else.
 
 ## Background mode
 
