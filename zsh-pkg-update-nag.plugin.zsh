@@ -424,13 +424,11 @@ zsh-pkg-update-nag() {
       ;;
     --now|now|--force|force)
       _zpun_config_load
-      # On-demand invocation is an explicit request to act, so always take the
-      # interactive prompt path even when the ambient mode is `reminder` (whose
-      # whole purpose is to defer the upgrade to a command like this one). We
-      # can't force that with `zsh_pkg_update_nag_mode=prompt` here: _zpun_main
-      # re-runs _zpun_config_load, which re-sources the user's config and would
-      # clobber the override. _zpun_ui_present dispatches on FORCE instead, which
-      # config load never touches.
+      # On-demand invocation is an explicit request to act: always take the
+      # interactive prompt path even under `reminder` mode. Signal that with
+      # ZSH_PKG_UPDATE_NAG_FORCE rather than a mode override (which the config
+      # reload in _zpun_main would clobber); see _zpun_ui_present for why the
+      # dispatch keys off FORCE.
       ZSH_PKG_UPDATE_NAG_FORCE=1 _zpun_main
       ;;
     --help|-h|help|'')
