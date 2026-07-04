@@ -374,6 +374,24 @@ _zpun_ui_reminder() {
   _zpun_ui_say prompt "  Run  ${cmd}  to upgrade."
 }
 
+# _zpun_ui_mode — single source of truth for the recognized presentation modes.
+# Sets REPLY to the canonical mode (prompt|reminder) and returns 0 when
+# $zsh_pkg_update_nag_mode was a recognized value, 1 when it was unrecognized
+# and coerced to prompt. Both the dispatcher (_zpun_ui_present) and the
+# diagnostic (_zpun_ui_print_env) classify through here so they can't drift on
+# what counts as a valid mode. Sets REPLY in the caller's scope (zsh dynamic
+# scoping) — callers should `local REPLY` before invoking. No fork: this runs on
+# the nag path, so it stays a plain case with no command substitution.
+_zpun_ui_mode() {
+  emulate -L zsh
+  setopt local_options
+  case ${zsh_pkg_update_nag_mode:-prompt} in
+    reminder) REPLY=reminder ; return 0 ;;
+    prompt)   REPLY=prompt   ; return 0 ;;
+    *)        REPLY=prompt   ; return 1 ;;
+  esac
+}
+
 # _zpun_ui_present <lines…> — dispatch to the configured presentation mode.
 # reminder: list + instruction; prompt (default): the interactive [Y/n/s] flow.
 # An explicit `--now` invocation sets ZSH_PKG_UPDATE_NAG_FORCE=1, which config
@@ -385,8 +403,11 @@ _zpun_ui_present() {
   emulate -L zsh
   setopt local_options
 
+  local REPLY
+  _zpun_ui_mode
+
   {
-    if [[ ${ZSH_PKG_UPDATE_NAG_FORCE:-0} != 1 && ${zsh_pkg_update_nag_mode:-prompt} == reminder ]]; then
+    if [[ ${ZSH_PKG_UPDATE_NAG_FORCE:-0} != 1 && $REPLY == reminder ]]; then
       _zpun_ui_reminder "$@"
     else
       _zpun_ui_prompt_and_upgrade "$@"
@@ -463,15 +484,17 @@ _zpun_ui_print_env() {
   print -r -- "  plugin dir:    $_ZPUN_DIR"
   print -r -- "  state dir:     $(_zpun_state_dir)"
   print -r -- "  interval:      ${zsh_pkg_update_nag_interval_hours}h"
-  local present_mode=${zsh_pkg_update_nag_mode:-prompt}
-  case $present_mode in
-    reminder)
-      print -r -- "  mode:          reminder (\"${zsh_pkg_update_nag_reminder_command}\")" ;;
-    prompt)
-      print -r -- "  mode:          prompt" ;;
-    *)
-      print -r -- "  mode:          prompt (unrecognized value \"${present_mode}\")" ;;
-  esac
+  local REPLY
+  if _zpun_ui_mode; then
+    case $REPLY in
+      reminder)
+        print -r -- "  mode:          reminder (\"${zsh_pkg_update_nag_reminder_command}\")" ;;
+      prompt)
+        print -r -- "  mode:          prompt" ;;
+    esac
+  else
+    print -r -- "  mode:          prompt (unrecognized value \"${zsh_pkg_update_nag_mode}\")"
+  fi
   local global_age=${zsh_pkg_update_nag_min_age:-0}
   local cached_count=0
   (( $+functions[_zpun_min_age_cache_count] )) && cached_count=$(_zpun_min_age_cache_count)

@@ -98,3 +98,39 @@ teardown() { teardown_env ; }
   [[ "$output" == *"mode:"* ]]
   [[ "$output" == *"unrecognized value \"Reminder\""* ]]
 }
+
+# _zpun_ui_mode is the single source of truth for the recognized presentation
+# modes. Both the dispatcher (_zpun_ui_present) and the diagnostic
+# (_zpun_ui_print_env) classify through it, so they can't drift on what counts
+# as a valid mode. It sets REPLY to the canonical mode and returns 0 when the
+# configured value was recognized, 1 when it was coerced to prompt.
+
+@test "_zpun_ui_mode canonicalizes reminder and reports it recognized" {
+  run run_plugin_zsh "
+    zsh_pkg_update_nag_mode=reminder
+    _zpun_ui_mode ; local rc=\$?
+    print \"REPLY=\$REPLY rc=\$rc\"
+  "
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"REPLY=reminder rc=0"* ]]
+}
+
+@test "_zpun_ui_mode defaults an unset mode to prompt, recognized" {
+  run run_plugin_zsh "
+    unset zsh_pkg_update_nag_mode
+    _zpun_ui_mode ; local rc=\$?
+    print \"REPLY=\$REPLY rc=\$rc\"
+  "
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"REPLY=prompt rc=0"* ]]
+}
+
+@test "_zpun_ui_mode coerces an unrecognized value to prompt and returns 1" {
+  run run_plugin_zsh "
+    zsh_pkg_update_nag_mode=Reminder
+    _zpun_ui_mode ; local rc=\$?
+    print \"REPLY=\$REPLY rc=\$rc\"
+  "
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"REPLY=prompt rc=1"* ]]
+}
