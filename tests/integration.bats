@@ -163,6 +163,23 @@ teardown() { teardown_env ; }
   [[ "$output" != *"--cooldown"* ]]
 }
 
+@test "_zpun_run_upgrade brew leaves Homebrew's own confirmation alone by default" {
+  # Brew asks only when the plan exceeds the named package, so those prompts
+  # carry information the nag summary can't — the default must not skip them.
+  run run_plugin_zsh "_zpun_run_upgrade brew gh"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"--yes"* ]]
+  [[ "$output" == *"brew fixture upgraded: gh"* ]]
+}
+
+@test "_zpun_run_upgrade brew passes --yes when brew_ask is off" {
+  run run_plugin_zsh "zsh_pkg_update_nag_brew_ask=off; _zpun_run_upgrade brew gh"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"brew upgrade --yes gh"* ]]
+  # The flag must not displace the package name.
+  [[ "$output" == *"brew fixture upgraded: gh"* ]]
+}
+
 @test "_zpun_run_upgrade cargo forwards --cooldown when min-age is set" {
   # Closes the upgrade-time gap: a configured cargo min-age must reach the
   # actual upgrade, so accepting it cannot install a version newer than the

@@ -505,7 +505,7 @@ _zpun_ui_print_env() {
   fi
   print -r -- "  stamp:         $stamp_status"
   print -r -- "  managers:"
-  local m mode allow available age_label age_threshold
+  local m mode allow available age_label age_threshold ask_label
   for m in brew npm pnpm uv gem cargo; do
     mode="off"
     if _zpun_manager_enabled "$m"; then
@@ -522,7 +522,11 @@ _zpun_ui_print_env() {
     (( $+functions[_zpun_min_age_threshold] )) && age_threshold=$(_zpun_min_age_threshold "$m")
     age_label=""
     (( age_threshold > 0 )) && age_label=" min-age=${age_threshold}d"
-    print -r -- "    $m: $mode ($available)$age_label"
+    # brew is the only manager that confirms on its own; surface the setting so
+    # "why does brew prompt for every package?" is answerable from here.
+    ask_label=""
+    [[ $m == brew ]] && ask_label=" ask=${zsh_pkg_update_nag_brew_ask:-on}"
+    print -r -- "    $m: $mode ($available)$age_label$ask_label"
   done
 }
 

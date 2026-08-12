@@ -130,6 +130,10 @@ zsh_pkg_update_nag_cargo=all
 # Example: watch only two npm globals.
 # zsh_pkg_update_nag_npm=(typescript prettier)
 
+# Let Homebrew run its own confirmation prompt during an upgrade. Default: on.
+# Set to "off" to pass `--yes`. See "Homebrew's confirmation prompt" below.
+zsh_pkg_update_nag_brew_ask=on
+
 # Minimum release age in days (0 = off, the default). See the section below.
 zsh_pkg_update_nag_min_age=0
 # zsh_pkg_update_nag_min_age_npm=14   # per-manager override; wins over the global
@@ -174,6 +178,40 @@ typing. Running the suggested command (`zsh-pkg-update-nag --now`) always takes
 the interactive prompt path, regardless of the mode. That's how you actually
 apply the upgrades. Point `zsh_pkg_update_nag_reminder_command` at an alias or
 wrapper function if you drive upgrades through something else.
+
+## Homebrew's confirmation prompt
+
+Homebrew defaults to ask-mode: `brew upgrade` prints the plan, and prompts for
+confirmation whenever that plan includes dependencies, dependents, or packages
+beyond the ones you named. Upgrades run one command per package, so left alone
+that means answering `Y` at the nag prompt and then answering Homebrew again for
+every package that pulls something else in. The other five managers are
+non-interactive, so brew is the only one that does this.
+
+If that's more confirmation than you want, opt out:
+
+```zsh
+# ~/.config/zsh-pkg-update-nag/config.zsh
+zsh_pkg_update_nag_brew_ask=off
+```
+
+The plugin then passes `--yes`. The echoed command shows the flag, so what you
+see is what ran:
+
+```
+→ brew upgrade --yes gh
+```
+
+**This is opt-in on purpose.** Those prompts aren't redundant with the nag
+prompt — they're the only place dependent upgrades are surfaced, and the
+summary above lists only the named packages. Accepting `gh 2.60.0 → 2.62.0` may
+also rebuild packages that never appeared in the list, and with `off` that
+happens unseen. `brew upgrade --dry-run <pkg>` shows the same plan on demand.
+
+`zsh-pkg-update-nag --check-env` reports the current setting on the brew row.
+
+One caveat with `off`: `--yes` landed alongside ask-mode, so a Homebrew old
+enough to predate it will reject the flag. Leave the setting `on` there.
 
 ## Background mode
 
