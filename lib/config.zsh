@@ -15,6 +15,19 @@ _zpun_config_load() {
   : ${zsh_pkg_update_nag_cargo:=all}
   : ${zsh_pkg_update_nag_min_age:=0}
 
+  # Whether Homebrew runs its own confirmation prompt during an upgrade.
+  # Homebrew defaults to ask-mode: `brew upgrade` prints the plan and prompts
+  # whenever it pulls in dependencies, dependents, or packages beyond the named
+  # one. We invoke brew once per package, so that asks once per such package,
+  # after the user already answered the nag prompt.
+  #
+  # On (the default) leaves brew alone. Deliberately not suppressed by default:
+  # brew asks only when the plan exceeds the named package, so those prompts are
+  # the only place dependent upgrades surface — the nag summary lists just the
+  # named packages and can't show them. Set to "off" to pass `--yes` and accept
+  # the plan unseen, matching the other five managers, which never re-confirm.
+  : ${zsh_pkg_update_nag_brew_ask:=on}
+
   # Presentation mode at the session-start nag:
   #   prompt   — render the summary and block on the [Y/n/s] upgrade prompt (default).
   #   reminder — render the summary and print a one-line instruction to upgrade

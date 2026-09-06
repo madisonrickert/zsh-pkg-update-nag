@@ -181,7 +181,8 @@ _zpun_timeout_prefix() {
 # Arguments: <manager> <package> [<version>]
 # When version is provided, npm/pnpm/uv/gem pin to that exact version.
 # When omitted, those fall back to latest-tracking commands.
-# brew always uses `brew upgrade <pkg>` (version arg is ignored).
+# brew always uses `brew upgrade <pkg>` (version arg is ignored), adding
+# `--yes` to skip Homebrew's own confirmation only when brew_ask is off.
 # cargo upgrades via cargo-update and forwards the configured min-age to its
 # native `--cooldown` (the version arg is ignored) so the upgrade installs the
 # same cooldown-resolved version the scan showed, not the true latest.
@@ -192,7 +193,22 @@ _zpun_run_upgrade() {
   local manager=$1 pkg=$2 version=${3:-}
   local -a cmd
   case $manager in
-    brew) cmd=(brew upgrade "$pkg") ;;
+    brew)
+      # Homebrew defaults to ask-mode: `brew upgrade` prints the plan and
+      # prompts whenever it pulls in dependencies, dependents, or packages
+      # beyond the named one. We run brew once per package, so that re-prompts
+      # once per such package after the nag prompt was already answered.
+      # Opting out with brew_ask=off passes `--yes` (alias `--no-ask`) to skip
+      # it; the default leaves brew alone, because those prompts are the only
+      # place dependent upgrades surface. Resolved inline (not via config load)
+      # so the function stays correct when called directly, as the cargo
+      # min-age block below also does.
+      if [[ ${zsh_pkg_update_nag_brew_ask:-on} == off ]]; then
+        cmd=(brew upgrade --yes "$pkg")
+      else
+        cmd=(brew upgrade "$pkg")
+      fi
+      ;;
     npm)  cmd=(npm install -g "${pkg}@${version:-latest}") ;;
     pnpm) cmd=(pnpm add -g "${pkg}@${version:-latest}") ;;
     uv)   if [[ -n $version ]]; then cmd=(uv tool install --force "${pkg}==${version}")

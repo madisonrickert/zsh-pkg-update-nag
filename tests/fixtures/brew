@@ -48,7 +48,15 @@ JSON
     esac
     ;;
   upgrade)
-    echo "brew fixture upgraded: $2"
+    # Skip option flags (e.g. --yes) the way real brew does, so the reported
+    # name is the package rather than whatever happened to land in $2.
+    shift
+    for arg in "$@"; do
+      case "$arg" in
+        -*) continue ;;
+      esac
+      echo "brew fixture upgraded: $arg"
+    done
     exit 0
     ;;
   info)
