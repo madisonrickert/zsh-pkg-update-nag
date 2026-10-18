@@ -96,7 +96,7 @@ _zpun_ui_status_clear() {
 # moment is intrusive and risks consuming a pre-typed character as the
 # answer. zsh/zselect polls fd 0 with no wait, but the descriptor only
 # delivers bytes outside of canonical-mode line buffering, so we briefly
-# switch to -icanon, poll, and restore the original tty in `always`.
+# switch to -icanon, poll, and undo that one change in `always`.
 #
 # Pattern lifted from dotfiler's _update_core_has_typed_input (which credits
 # Philippe Troin: https://zsh.org/mla/users/2022/msg00062.html).
@@ -105,38 +105,114 @@ _zpun_has_typed_input() {
   setopt local_options
   [[ -t 0 ]] || return 1
   zmodload zsh/zselect 2>/dev/null || return 1
-  local saved
-  saved=$(stty -g 2>/dev/null) || return 1
+  local REPLY undo
+  _zpun_tty_apply -icanon || return 1
+  undo=$REPLY
   {
-    stty -icanon
     zselect -t 0 -r 0
     return $?
   } always {
-    stty "$saved"
+    _zpun_tty_undo "$undo"
   }
 }
 
+# _zpun_tty_apply <mode…> — switch the tty flags named by <mode…> (each
+# `echo`/`-echo`/`icanon`/`-icanon`; `-icanon` also forces `min 1 time 0` so
+# a blocking `read -k` returns on the first byte) and set REPLY to an opaque
+# token for _zpun_tty_undo. The token records the tty before (`stty -g`), the
+# tty as we left it, and the minimal flag list that reverses only what we
+# changed; flags already in the requested state are neither touched nor
+# undone. Returns 1 with the tty untouched when stdin isn't a TTY or its modes
+# can't be read.
+_zpun_tty_apply() {
+  emulate -L zsh
+  setopt local_options
+  REPLY=
+  [[ -t 0 ]] || return 1
+  local raw
+  raw=$(stty -a 2>/dev/null) || return 1
+  # Normalise both BSD ("lflags: icanon … echo …") and GNU ("… icanon …;")
+  # layouts into space-delimited tokens so " echo " can't match "echoe".
+  local cur=" ${raw//[;$'\n'$'\t']/ } "
+  local m flag cbreak=0
+  local -a apply undo
+  for m in "$@"; do
+    flag=${m#-}
+    [[ $m == -icanon ]] && cbreak=1
+    if [[ $m == -* ]]; then
+      [[ $cur == *" $flag "* ]] || continue
+      apply+=( -$flag ); undo+=( $flag )
+    else
+      [[ $cur == *" -$flag "* ]] || continue
+      apply+=( $flag ); undo+=( -$flag )
+    fi
+  done
+  (( cbreak )) && apply+=( min 1 time 0 )
+  local before after
+  before=$(stty -g 2>/dev/null) || return 1
+  stty "${apply[@]}" 2>/dev/null
+  after=$(stty -g 2>/dev/null)
+  REPLY="${before}"$'\t'"${after}"$'\t'"${undo[*]}"
+  return 0
+}
+
+# _zpun_tty_undo <token> — reverse a _zpun_tty_apply using the REPLY it
+# returned. If the tty is exactly as we left it, nothing else touched it
+# while we held it, so the saved snapshot is restored verbatim. If it
+# differs, something else changed it in the meantime (a child process,
+# another program sharing the pty, a terminal reset). Replaying the snapshot
+# then would silently revert that change and could leave the terminal in a
+# mode the shell no longer expects, so only the flags we changed are flipped
+# back and everything else is left as it is now.
+_zpun_tty_undo() {
+  emulate -L zsh
+  setopt local_options
+  [[ -n $1 && -t 0 ]] || return 0
+  local -a parts
+  parts=( "${(@ps:\t:)1}" )
+  local before=$parts[1] after=$parts[2] undo=$parts[3] now
+  now=$(stty -g 2>/dev/null) || return 0
+  if [[ -n $before && $now == "$after" ]]; then
+    stty "$before" 2>/dev/null
+  elif [[ -n $undo ]]; then
+    stty ${=undo} 2>/dev/null
+  fi
+  return 0
+}
+
 # _zpun_input_capture_begin — silently absorb keystrokes during the foreground
-# scan so they don't echo over the spinner. Switches the terminal to
-# -echo -icanon and stays that way through the y/n/s prompt; the prompt's
-# read enables echo just for the answer key, then `_zpun_input_capture_end`
-# restores the saved tty and replays buffered bytes onto the next ZLE prompt
-# via `print -z`. No-op when stdin isn't a TTY (background mode, scripts,
-# captured tests).
+# scan so they don't echo over the spinner, and so a key typed mid-scan is
+# never taken as the y/n/s answer (_zpun_has_typed_input sees it queued and
+# auto-skips). Switches the terminal to -echo -icanon and stays that way
+# through the prompt; the prompt's read enables echo just for the answer key,
+# then `_zpun_input_capture_end` replays buffered bytes onto the next ZLE
+# prompt via `print -z` and schedules the tty restore for that prompt. No-op
+# when stdin isn't a TTY (background mode, scripts, captured tests).
+#
+# _ZPUN_TTY_SAVED doubles as the "session active" flag: it is set for the
+# session's lifetime and holds the _zpun_tty_apply token.
 #
 # Caller MUST ensure _zpun_input_capture_end runs on every exit path —
 # typically via the existing INT/TERM/EXIT trap in _zpun_main.
 _zpun_input_capture_begin() {
   emulate -L zsh
   setopt local_options
-  [[ -t 0 ]] || return 0
-  local saved
-  saved=$(stty -g 2>/dev/null) || return 0
-  typeset -g _ZPUN_TTY_SAVED=$saved
+  (( ${+_ZPUN_TTY_SAVED} )) && return 0
+  if (( ${+_ZPUN_TTY_RESTORE} )); then
+    # A previous capture's restore is still waiting for its prompt: the tty
+    # is not in its original state, so snapshotting it now would record our
+    # own capture mode as "original". Resume that session instead, keeping
+    # its token (re-apply our flags in case _zpun_tty_release flipped them).
+    typeset -g _ZPUN_TTY_SAVED=$_ZPUN_TTY_RESTORE
+    unset _ZPUN_TTY_RESTORE
+    precmd_functions=( ${precmd_functions:#_zpun_tty_restore_precmd} )
+    stty -echo -icanon min 1 time 0 2>/dev/null
+  else
+    local REPLY
+    _zpun_tty_apply -echo -icanon || return 0
+    typeset -g _ZPUN_TTY_SAVED=$REPLY
+  fi
   typeset -g _ZPUN_INPUT_BUFFER=
-  # min 1 time 0 makes blocking reads return on the first byte; -t 0 reads
-  # used by _zpun_input_capture_drain are independently non-blocking.
-  stty -echo -icanon min 1 time 0 2>/dev/null
 }
 
 # _zpun_input_capture_drain — append any currently-queued tty bytes to the
@@ -154,18 +230,54 @@ _zpun_input_capture_drain() {
   return 0
 }
 
-# _zpun_input_capture_end — final drain, restore the saved tty, push the
-# captured bytes onto ZLE's editor buffer with `print -z` so the user's
-# typed-ahead input lands on the next interactive prompt. Idempotent — safe
-# to call from a trap that may also fire on the normal exit path.
+# _zpun_input_capture_end — final drain, push the captured bytes onto ZLE's
+# editor buffer with `print -z` so the user's typed-ahead input lands on the
+# next interactive prompt, and hand the tty restore to
+# _zpun_tty_restore_precmd. Idempotent — safe to call from a trap that may
+# also fire on the normal exit path.
+#
+# The restore is deferred because the tty is only ever restored at a prompt:
+# there the shell is in the foreground by definition and nothing else is
+# running, so it cannot clobber another program's mode. Ending the capture
+# from a trap, mid-function, or with a child still holding the terminal
+# never writes the tty. The one exception is _zpun_tty_release, called
+# right before upgraders run.
 _zpun_input_capture_end() {
   emulate -L zsh
   setopt local_options
   (( ${+_ZPUN_TTY_SAVED} )) || return 0
   _zpun_input_capture_drain
-  [[ -n $_ZPUN_TTY_SAVED ]] && stty "$_ZPUN_TTY_SAVED" 2>/dev/null
   [[ -n $_ZPUN_INPUT_BUFFER ]] && print -z -- "$_ZPUN_INPUT_BUFFER"
+  typeset -g _ZPUN_TTY_RESTORE=$_ZPUN_TTY_SAVED
+  precmd_functions=( _zpun_tty_restore_precmd ${precmd_functions:#_zpun_tty_restore_precmd} )
   unset _ZPUN_TTY_SAVED _ZPUN_INPUT_BUFFER
+}
+
+# _zpun_tty_restore_precmd — one-shot precmd hook: restore the tty a capture
+# session left behind (compare-then-restore, see _zpun_tty_undo), then
+# deregister. Registered first in precmd_functions so later hooks (and any
+# prompt we present from _zpun_precmd_nag) start from the user's tty mode.
+_zpun_tty_restore_precmd() {
+  emulate -L zsh
+  setopt local_options
+  precmd_functions=( ${precmd_functions:#_zpun_tty_restore_precmd} )
+  (( ${+_ZPUN_TTY_RESTORE} )) || return 0
+  _zpun_tty_undo "$_ZPUN_TTY_RESTORE"
+  unset _ZPUN_TTY_RESTORE
+}
+
+# _zpun_tty_release — hand the terminal to child processes (upgraders: brew,
+# npm, …, whose own confirmation prompts need echo and line editing) by
+# flipping back only the flags the capture changed. The full restore still
+# happens at the next prompt. No-op when no capture restore is pending.
+_zpun_tty_release() {
+  emulate -L zsh
+  setopt local_options
+  (( ${+_ZPUN_TTY_RESTORE} )) || return 0
+  [[ -t 0 ]] || return 0
+  local undo=${${(@ps:\t:)_ZPUN_TTY_RESTORE}[3]}
+  [[ -n $undo ]] && stty ${=undo} 2>/dev/null
+  return 0
 }
 
 # _zpun_progress_emit <message…> — fan a progress event out to every hook
@@ -219,7 +331,7 @@ _zpun_ui_render_summary() {
     cur=${${(s:	:)line}[3]}
     lat=${${(s:	:)line}[4]}
 
-    if [[ $manager != $prev_manager ]]; then
+    if [[ $manager != "$prev_manager" ]]; then
       label=${_ZPUN_MANAGER_LABELS[$manager]:-$manager}
       _zpun_ui_say header "  $label"
       prev_manager=$manager
@@ -240,14 +352,18 @@ _zpun_ui_render_summary() {
 }
 
 # _zpun_ui_read_choice <prompt> <valid_chars> <default_char>
-# Displays the prompt on stderr so callers can safely $(...)-capture stdout.
-# Emits exactly one character (the chosen key, lowercased) on stdout.
+# Displays the prompt on stderr and sets REPLY to exactly one character (the
+# chosen key, lowercased). Call it directly, never as $(...): it must run in
+# the calling shell so that type-ahead drained into _ZPUN_INPUT_BUFFER
+# survives to be replayed, and so the EXIT-trap gate below sees an outer
+# trap end the capture session. A subshell would get copies of both.
 _zpun_ui_read_choice() {
   emulate -L zsh
   setopt local_options
 
   local prompt=$1 valid=$2 default=$3
-  local key
+  local key token
+  REPLY=
 
   if _zpun_ui_color_enabled; then
     print -nP -r -- "  %F{cyan}${prompt//\%/%%}%f " >&2
@@ -262,38 +378,45 @@ _zpun_ui_read_choice() {
   #    already in -echo -icanon. Drain any queued type-ahead into the shared
   #    buffer so it doesn't get consumed as the answer, then briefly enable
   #    echo so the user sees their keypress. Function-local EXIT trap puts
-  #    echo back off; the surrounding capture session handles full restore.
+  #    echo back off; the session's prompt-time restore handles the rest.
   #
   # 2. Standalone (per-package prompt during upgrades, or background-mode
   #    precmd path): no capture session active, terminal is whatever the
-  #    user's shell left it. Save it, switch to cbreak with echo, restore on
-  #    exit via function-local EXIT trap.
+  #    user's shell left it. Switch to cbreak with echo for the duration of
+  #    this read, which the user is actively answering, and undo it on exit
+  #    via function-local EXIT trap (compare-then-restore, _zpun_tty_undo).
   #
   # Function-local traps work here because `emulate -L zsh` enables
   # LOCAL_TRAPS, so they fire on every return path including signal unwinds.
-  local saved_tty
   if [[ -t 0 ]]; then
     if (( ${+_ZPUN_TTY_SAVED} )); then
       _zpun_input_capture_drain
       stty echo 2>/dev/null
-      # If a signal-driven outer trap fully restores the tty mid-read
-      # (clearing _ZPUN_TTY_SAVED), our cleanup must NOT then turn echo
-      # back off on the now-restored terminal — the gate guards that.
+      # If a signal-driven outer trap ends the session mid-read (clearing
+      # _ZPUN_TTY_SAVED), our cleanup must NOT then turn echo back off on a
+      # terminal that is about to be handed back — the gate guards that.
       trap '(( ${+_ZPUN_TTY_SAVED} )) && stty -echo 2>/dev/null' EXIT
-    else
-      saved_tty=$(stty -g 2>/dev/null)
-      if [[ -n $saved_tty ]]; then
-        stty -icanon echo min 1 time 0 2>/dev/null
-        trap "stty '$saved_tty' 2>/dev/null" EXIT
-      fi
+    elif _zpun_tty_apply -icanon echo; then
+      token=$REPLY
+      # The token is `stty -g` strings, flags, and tabs — never a single
+      # quote — so it is safe to embed (expanding it now is the point).
+      # shuck: disable=C008
+      trap "_zpun_tty_undo '$token'" EXIT
     fi
   fi
 
-  # read -k 1 reads a single keypress; -u 0 forces stdin (important for subshells).
+  # read -k 1 reads a single keypress; -u 0 forces stdin.
   if ! read -k 1 -u 0 key; then
+    # EOF (Ctrl-D, closed stdin) or an interrupted read must DECLINE, not
+    # accept: only an explicit valid key — or the [Y/n] Enter default —
+    # accepts. Mirrors the update-impl pattern `read ... || _ans=n`.
     print >&2
-    print -r -- "$default"
-    return
+    if [[ $valid == *n* ]]; then
+      REPLY=n
+    else
+      REPLY=$default
+    fi
+    return 0
   fi
   print >&2
 
@@ -313,7 +436,7 @@ _zpun_ui_read_choice() {
     # 'q' must not silently confirm.
     [[ $valid == *n* ]] && key=n || key=$default
   fi
-  print -r -- "$key"
+  REPLY=$key
 }
 
 # _zpun_ui_prompt_and_upgrade <lines…> — tier-1 prompt, then run upgrades.
@@ -326,7 +449,7 @@ _zpun_ui_prompt_and_upgrade() {
 
   _zpun_ui_render_summary "${lines[@]}"
 
-  local choice
+  local choice REPLY
   if _zpun_has_typed_input; then
     # User is mid-typing the next command — don't pop a blocking prompt
     # at them and risk consuming a pre-typed key as the answer. Render
@@ -340,17 +463,22 @@ _zpun_ui_prompt_and_upgrade() {
     fi
     choice=n
   else
-    choice=$(_zpun_ui_read_choice "Update all? [Y/n/s] ›" "yns" "y")
+    _zpun_ui_read_choice "Update all? [Y/n/s] ›" "yns" "y"
+    choice=$REPLY
   fi
 
-  # End any active capture session before running upgrades: restore the tty
-  # to a normal cooked+echo state for `brew upgrade`, `npm install -g`, etc.
-  # to behave normally, and replay any captured type-ahead onto the next
-  # ZLE prompt. No-op when no session is active (background-mode precmd).
+  # End any active capture session: replay captured type-ahead onto the next
+  # ZLE prompt and schedule the tty restore for it. Upgraders (`brew
+  # upgrade`, `npm install -g`, …) run before that prompt, so hand them a
+  # cooked+echo terminal by flipping back the capture's own flags. Both are
+  # no-ops when no session is active (background-mode precmd).
   _zpun_input_capture_end
+  [[ $choice == [ys] ]] && _zpun_tty_release
 
   case $choice in
     y) _zpun_ui_upgrade_all "${lines[@]}" ;;
+    # Config global, set by _zpun_config_load.
+    # shuck: disable=C006
     n) _zpun_ui_info "Skipped. Next check in ${zsh_pkg_update_nag_interval_hours}h." ;;
     s) _zpun_ui_upgrade_individually "${lines[@]}" ;;
   esac
@@ -370,8 +498,24 @@ _zpun_ui_reminder() {
 
   # Indent to line up with the two-space summary block above, so the
   # instruction reads as part of the notice rather than a detached trailer.
+  # Config global, set by _zpun_config_load.
+  # shuck: disable=C006
   local cmd=${zsh_pkg_update_nag_reminder_command}
   _zpun_ui_say prompt "  Run  ${cmd}  to upgrade."
+}
+
+# _zpun_ui_notice <lines…> — non-blocking mid-session presentation: render
+# the tier-1 summary and point at the on-demand upgrade command. NEVER reads
+# the terminal. Used by the deferred precmd when results arrive after the
+# session's first prompt — i.e. potentially the instant the user returned
+# from a foreground application, which is exactly when a blocking single-key
+# read would steal their leading ESC bytes and mangle their typing.
+_zpun_ui_notice() {
+  emulate -L zsh
+  setopt local_options
+
+  _zpun_ui_render_summary "$@"
+  _zpun_ui_say prompt "  Run  ${zsh_pkg_update_nag_reminder_command:-zsh-pkg-update-nag --now}  to upgrade."
 }
 
 # _zpun_ui_mode — single source of truth for the recognized presentation modes.
@@ -440,7 +584,7 @@ _zpun_ui_upgrade_individually() {
   emulate -L zsh
   setopt local_options
 
-  local line manager pkg cur lat choice
+  local line manager pkg cur lat choice REPLY
   for line in "$@"; do
     (( ${_ZPUN_INTERRUPTED:-0} )) && { _zpun_ui_info "Stopped (Ctrl-C)."; return; }
     manager=${${(s:	:)line}[1]}
@@ -448,7 +592,8 @@ _zpun_ui_upgrade_individually() {
     cur=${${(s:	:)line}[3]}
     lat=${${(s:	:)line}[4]}
 
-    choice=$(_zpun_ui_read_choice "update ${manager} ${pkg} ${cur} → ${lat}? [Y/n]" "yn" "y")
+    _zpun_ui_read_choice "update ${manager} ${pkg} ${cur} → ${lat}? [Y/n]" "yn" "y"
+    choice=$REPLY
     if [[ $choice == y ]]; then
       _zpun_run_upgrade "$manager" "$pkg" "$lat" || _zpun_ui_error "  upgrade failed for ${manager} ${pkg}"
     fi

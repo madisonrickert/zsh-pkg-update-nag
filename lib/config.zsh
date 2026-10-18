@@ -122,10 +122,67 @@ _zpun_state_dir() {
   print -r -- "${XDG_STATE_HOME:-$HOME/.local/state}/zsh-pkg-update-nag"
 }
 
+# _zpun_pending_path — per-shell pending file, keyed by PID. Scan results
+# belong to the shell that spawned them, so a cross-shell precmd can no
+# longer consume another window's scan and pop a presentation (with its
+# blocking prompt) there. zsh keeps $$ as the parent shell's PID inside
+# subshells, so the parent, the deferred subshell it forks, and the precmd
+# hook all agree on the name. (The legacy shared name was "pending_updates";
+# a stale legacy file is harmless and simply never gets consumed — the rate
+# limit gates the next real scan.)
 _zpun_pending_path() {
   emulate -L zsh
   setopt local_options
-  print -r -- "$(_zpun_state_dir)/pending_updates"
+  print -r -- "$(_zpun_state_dir)/pending.$$"
+}
+
+# _zpun_pending_owner_alive <pending-file> — 0 when the shell that owns the
+# file (PID suffix) is still running. Such a file is NOT a leftover: its
+# owner is merely busy in a foreground command and will consume it at its
+# next prompt. `kill -0` is a builtin, so this costs no fork. A PID reused by
+# an unrelated process reads as alive, which errs on the side of leaving
+# the file alone.
+_zpun_pending_owner_alive() {
+  emulate -L zsh
+  setopt local_options
+  local pid=${1##*/pending.}
+  [[ $pid == <-> ]] || return 1
+  kill -0 $pid 2>/dev/null
+}
+
+# _zpun_pending_leftovers <own-pending> — set reply to the pending files in
+# <own-pending>'s directory left by shells that have died, excluding
+# <own-pending> itself and in-progress `.tmp` writes. Files of shells that
+# died over an hour ago are deleted instead of returned: stale enough to let
+# the rate limit govern the next real scan. Runs on the startup path, so it
+# is fork-free: the directory comes from the argument rather than a
+# $(_zpun_state_dir) subshell, and the glob qualifier `mh+1` does the age
+# test without `date`/`stat`.
+_zpun_pending_leftovers() {
+  emulate -L zsh
+  setopt local_options extended_glob
+  # Used via ${(b)exclude} below, which the linter does not see.
+  # shuck: disable=C001
+  local exclude=$1
+  local dir=${exclude:h}
+  local -a candidates stale
+  candidates=( $dir/pending.<->(N) )
+  stale=( $dir/pending.<->(Nmh+1) )
+  candidates=( ${candidates:#${(b)exclude}} )
+  stale=( ${stale:#${(b)exclude}} )
+  local f
+  reply=()
+  for f in "${candidates[@]}"; do
+    if ! _zpun_pending_owner_alive "$f"; then
+      reply+=( "$f" )
+    fi
+  done
+  for f in "${stale[@]}"; do
+    (( ${reply[(Ie)$f]} )) || continue
+    rm -f "$f" 2>/dev/null
+    reply=( ${reply:#${(b)f}} )
+  done
+  return 0
 }
 
 _zpun_age_cache_path() {

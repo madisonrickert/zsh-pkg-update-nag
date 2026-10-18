@@ -106,12 +106,13 @@ _WAIT_STAMP='
 # _zpun_main_deferred: orphaned pending file from a previous shell
 # ---------------------------------------------------------------------------
 
-@test "_zpun_main_deferred registers hook when orphaned pending file exists" {
+@test "_zpun_main_deferred registers hook when leftover pending files exist" {
   run run_plugin_zsh "
     _zpun_should_run() { return 0 }
     local pending=\$(_zpun_pending_path)
     mkdir -p \${pending:h}
-    print -r -- 'ok' > \$pending
+    # A dead shell's leftover — NOT our own pending.$$ — must be adopted.
+    print -r -- 'ok' > \"\${pending:h}/pending.99999\"
     _zpun_rate_limit_stamp
     _zpun_main_deferred
     print -r -- \${precmd_functions[(r)_zpun_precmd_nag]:-absent}
@@ -120,12 +121,12 @@ _WAIT_STAMP='
   [[ "$output" == *"_zpun_precmd_nag"* ]]
 }
 
-@test "_zpun_main_deferred does not launch a new scan when orphaned file exists" {
+@test "_zpun_main_deferred does not launch a new scan when leftovers exist and not due" {
   run run_plugin_zsh "
     _zpun_should_run() { return 0 }
     local pending=\$(_zpun_pending_path)
     mkdir -p \${pending:h}
-    print -r -- 'ok' > \$pending
+    print -r -- 'ok' > \"\${pending:h}/pending.99999\"
     _zpun_rate_limit_stamp
     _zpun_main_deferred
     # Lock should not be held — no new scan was started.
@@ -141,6 +142,7 @@ _WAIT_STAMP='
 
 @test "_zpun_precmd_nag stays registered when pending file is absent" {
   run run_plugin_zsh "
+    typeset -g _ZPUN_SCAN_IN_FLIGHT=1
     precmd_functions+=(_zpun_precmd_nag)
     _zpun_precmd_nag
     (( \${precmd_functions[(I)_zpun_precmd_nag]} )) && echo STILL_REGISTERED || echo REMOVED
@@ -149,14 +151,36 @@ _WAIT_STAMP='
   [[ "$output" == *"STILL_REGISTERED"* ]]
 }
 
+@test "_zpun_precmd_nag deregisters when no scan is in flight (leftover-only)" {
+  run run_plugin_zsh "
+    typeset -g _ZPUN_PRECMD_ANNOUNCED=1
+    precmd_functions+=(_zpun_precmd_nag)
+    _zpun_precmd_nag
+    (( \${precmd_functions[(I)_zpun_precmd_nag]} )) && echo STILL_REGISTERED || echo REMOVED
+  "
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"REMOVED"* ]]
+}
+
 @test "_zpun_precmd_nag prints checking notice on first call when scan is in flight" {
+  run run_plugin_zsh "
+    NO_COLOR=1
+    typeset -g _ZPUN_PRECMD_ANNOUNCED=1
+    typeset -g _ZPUN_SCAN_IN_FLIGHT=1
+    _zpun_precmd_nag
+  "
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"checking for package updates"* ]]
+}
+
+@test "_zpun_precmd_nag prints no checking notice when no scan is in flight" {
   run run_plugin_zsh "
     NO_COLOR=1
     typeset -g _ZPUN_PRECMD_ANNOUNCED=1
     _zpun_precmd_nag
   "
   [ "$status" -eq 0 ]
-  [[ "$output" == *"checking for package updates"* ]]
+  [[ "$output" != *"checking for package updates"* ]]
 }
 
 @test "_zpun_precmd_nag clears the announced flag so subsequent calls are silent" {
@@ -329,10 +353,36 @@ _WAIT_STAMP='
     NO_COLOR=1
     POWERLEVEL9K_INSTANT_PROMPT=off
     typeset -g _ZPUN_PRECMD_ANNOUNCED=1
+    typeset -g _ZPUN_SCAN_IN_FLIGHT=1
     _zpun_precmd_nag
   "
   [ "$status" -eq 0 ]
   [[ "$output" == *"checking for package updates"* ]]
+}
+
+@test "_zpun_precmd_nag mid-session arrival: notice, never the interactive prompt" {
+  run run_plugin_zsh "
+    NO_COLOR=1
+    zsh_pkg_update_nag_mode=prompt
+    local pending=\$(_zpun_pending_path)
+    mkdir -p \${pending:h}
+    printf 'brew\tollama\t0.33.0\t0.40.0\n' > \$pending
+    # first_call has passed: no _ZPUN_PRECMD_ANNOUNCED, no _ZPUN_SCAN_IN_FLIGHT
+    _zpun_precmd_nag
+  "
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"ollama"* ]]
+  [[ "$output" == *"to upgrade"* ]]
+  [[ "$output" != *"Update all"* ]]
+}
+
+@test "_zpun_ui_read_choice: EOF (closed stdin) declines instead of defaulting" {
+  run run_plugin_zsh "
+    _zpun_ui_read_choice 'P?' 'yns' 'y' < /dev/null
+    print -r -- \"[\$REPLY]\"
+  "
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"[n]"* ]]
 }
 
 @test "_zpun_precmd_nag defers first call under p10k when pending exists" {
@@ -388,18 +438,204 @@ _WAIT_STAMP='
   [[ "$output" == *"All packages up to date"* ]]
 }
 
-@test "_zpun_main_deferred sets ANNOUNCED on orphaned-pending branch" {
+@test "_zpun_main_deferred sets ANNOUNCED on the leftover branch" {
   run run_plugin_zsh "
     _zpun_should_run() { return 0 }
     local pending=\$(_zpun_pending_path)
     mkdir -p \${pending:h}
-    print -r -- 'ok' > \$pending
+    print -r -- 'ok' > \"\${pending:h}/pending.99999\"
     _zpun_rate_limit_stamp
     _zpun_main_deferred
-    (( \${+_ZPUN_PRECMD_ANNOUNCED} )) && echo SET || echo UNSET
+    (( \${+_ZPUN_PRECMD_ANNOUNCED} )) && echo ANNOUNCED_SET || echo ANNOUNCED_UNSET
   "
   [ "$status" -eq 0 ]
-  [[ "$output" == *"SET"* ]]
+  [[ "$output" == *"ANNOUNCED_SET"* ]]
+}
+
+# A pending.$$ present at startup was left by a dead shell whose PID we
+# reused: it must not be presented as this shell's own fresh scan.
+@test "_zpun_main_deferred discards a stale pending file at its own PID" {
+  run run_plugin_zsh "
+    _zpun_should_run() { return 0 }
+    local pending=\$(_zpun_pending_path)
+    mkdir -p \${pending:h}
+    print -r -- \$'brew\tgh\t2.60.0\t2.62.0' > \$pending
+    _zpun_rate_limit_stamp
+    _zpun_main_deferred
+    [[ -e \$pending ]] && echo PENDING_KEPT || echo PENDING_GONE
+    (( \${+_ZPUN_PRECMD_ANNOUNCED} )) && echo ANNOUNCED_SET || echo ANNOUNCED_UNSET
+  "
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"PENDING_GONE"* ]]
+  [[ "$output" == *"ANNOUNCED_UNSET"* ]]
+}
+
+# ---------------------------------------------------------------------------
+# Leftover adoption: only DEAD shells' files are leftovers.
+# ---------------------------------------------------------------------------
+
+# _DEAD_PID — zsh snippet: set dead_pid to a PID no process holds.
+_DEAD_PID='
+  integer dead_pid=99000
+  while kill -0 $dead_pid 2>/dev/null; do (( dead_pid++ )); done
+'
+
+@test "leftovers: a live shell's pending file is neither adopted nor deleted" {
+  run run_plugin_zsh "
+    _zpun_should_run() { return 0 }
+    local dir=\$(_zpun_state_dir)
+    mkdir -p \$dir
+    sleep 30 &
+    local live=\$!
+    print -r -- \$'brew\tgh\t2.60.0\t2.62.0' > \$dir/pending.\$live
+    touch -t 202001010000 \$dir/pending.\$live   # old, too: still not gc'd
+    _zpun_rate_limit_stamp
+    _zpun_main_deferred
+    print -r -- \"leftovers=\${#_ZPUN_LEFTOVER_PENDING}\"
+    [[ -e \$dir/pending.\$live ]] && echo FILE_KEPT || echo FILE_GONE
+    kill \$live
+  "
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"leftovers=0"* ]]
+  [[ "$output" == *"FILE_KEPT"* ]]
+}
+
+@test "leftovers: a dead shell's hour-old pending file is deleted, not adopted" {
+  run run_plugin_zsh "
+    _zpun_should_run() { return 0 }
+    ${_DEAD_PID}
+    local dir=\$(_zpun_state_dir)
+    mkdir -p \$dir
+    print -r -- \$'brew\tgh\t2.60.0\t2.62.0' > \$dir/pending.\$dead_pid
+    touch -t 202001010000 \$dir/pending.\$dead_pid
+    _zpun_rate_limit_stamp
+    _zpun_main_deferred
+    print -r -- \"leftovers=\${#_ZPUN_LEFTOVER_PENDING}\"
+    [[ -e \$dir/pending.\$dead_pid ]] && echo FILE_KEPT || echo FILE_GONE
+  "
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"leftovers=0"* ]]
+  [[ "$output" == *"FILE_GONE"* ]]
+}
+
+@test "leftovers: delivered as a notice, then the hook deregisters" {
+  run run_plugin_zsh "
+    NO_COLOR=1
+    _zpun_should_run() { return 0 }
+    ${_DEAD_PID}
+    local dir=\$(_zpun_state_dir)
+    mkdir -p \$dir
+    print -r -- \$'brew\tgh\t2.60.0\t2.62.0' > \$dir/pending.\$dead_pid
+    _zpun_rate_limit_stamp
+    _zpun_main_deferred
+    _zpun_precmd_nag
+    [[ -e \$dir/pending.\$dead_pid ]] && echo FILE_KEPT || echo FILE_GONE
+    (( \${precmd_functions[(I)_zpun_precmd_nag]} )) && echo HOOK_KEPT || echo HOOK_REMOVED
+  "
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"gh"* ]]
+  [[ "$output" == *"to upgrade"* ]]
+  [[ "$output" != *"Update all"* ]]
+  [[ "$output" == *"FILE_GONE"* ]]
+  [[ "$output" == *"HOOK_REMOVED"* ]]
+}
+
+@test "leftovers: survive the p10k deferral and are delivered on the second call" {
+  run run_plugin_zsh "
+    NO_COLOR=1
+    POWERLEVEL9K_INSTANT_PROMPT=quiet
+    _zpun_should_run() { return 0 }
+    ${_DEAD_PID}
+    local dir=\$(_zpun_state_dir)
+    mkdir -p \$dir
+    print -r -- \$'brew\tgh\t2.60.0\t2.62.0' > \$dir/pending.\$dead_pid
+    _zpun_rate_limit_stamp
+    _zpun_main_deferred
+    _zpun_precmd_nag
+    print -r -- '--- second precmd'
+    _zpun_precmd_nag
+    [[ -e \$dir/pending.\$dead_pid ]] && echo FILE_KEPT || echo FILE_GONE
+    (( \${precmd_functions[(I)_zpun_precmd_nag]} )) && echo HOOK_KEPT || echo HOOK_REMOVED
+  "
+  [ "$status" -eq 0 ]
+  # Nothing before the deferral; the notice after it.
+  [[ "${output%%--- second precmd*}" != *"gh"* ]]
+  [[ "${output#*--- second precmd}" == *"gh"* ]]
+  [[ "$output" == *"FILE_GONE"* ]]
+  [[ "$output" == *"HOOK_REMOVED"* ]]
+}
+
+# ---------------------------------------------------------------------------
+# Session start vs. mid-session: only results waiting before the user has run
+# anything may block on the interactive prompt.
+# ---------------------------------------------------------------------------
+
+@test "p10k: deferred call is session start when no command ran (bare Enter)" {
+  run run_plugin_zsh "
+    NO_COLOR=1
+    zsh_pkg_update_nag_mode=prompt
+    local pending=\$(_zpun_pending_path)
+    mkdir -p \${pending:h}
+    print -r -- \$'brew\tgh\t2.60.0\t2.62.0' > \$pending
+    typeset -g _ZPUN_PRECMD_ANNOUNCED=1
+    typeset -g _ZPUN_P10K_DEFERRED=\$HISTCMD
+    POWERLEVEL9K_INSTANT_PROMPT=quiet
+    _zpun_precmd_nag <<< 'n'
+  "
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Update all"* ]]
+}
+
+@test "p10k: deferred call after a command ran is a non-blocking notice" {
+  run run_plugin_zsh "
+    NO_COLOR=1
+    zsh_pkg_update_nag_mode=prompt
+    local pending=\$(_zpun_pending_path)
+    mkdir -p \${pending:h}
+    print -r -- \$'brew\tgh\t2.60.0\t2.62.0' > \$pending
+    typeset -g _ZPUN_PRECMD_ANNOUNCED=1
+    typeset -g _ZPUN_P10K_DEFERRED=\$(( HISTCMD - 1 ))
+    POWERLEVEL9K_INSTANT_PROMPT=quiet
+    _zpun_precmd_nag
+  "
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"gh"* ]]
+  [[ "$output" == *"to upgrade"* ]]
+  [[ "$output" != *"Update all"* ]]
+}
+
+# ---------------------------------------------------------------------------
+# Background subshell signal handling
+# ---------------------------------------------------------------------------
+
+# zsh signal traps resume execution after running, so the subshell must exit
+# explicitly on TERM rather than carry on scanning after writing 'err'.
+@test "background scan exits on TERM, writing 'err' and releasing the lock" {
+  run run_plugin_zsh "
+    _zpun_should_run() { return 0 }
+    local dir=\$(_zpun_state_dir)
+    _zpun_collect_outdated() {
+      zmodload zsh/system
+      print -r -- \$sysparams[ppid] > \$dir/scan.pid
+      sleep 3
+      print -r -- \$'brew\tgh\t2.60.0\t2.62.0'
+    }
+    _zpun_main_deferred
+    integer i=0
+    while [[ ! -s \$dir/scan.pid ]] && (( i++ < 50 )); do sleep 0.1; done
+    local scan=\$(<\$dir/scan.pid)
+    kill -TERM \$scan
+    ${_WAIT_PENDING}
+    cat \$(_zpun_pending_path)
+    i=0
+    while kill -0 \$scan 2>/dev/null && (( i++ < 20 )); do sleep 0.1; done
+    kill -0 \$scan 2>/dev/null && echo SCAN_ALIVE || echo SCAN_EXITED
+    _zpun_rate_limit_acquire_lock && echo LOCK_FREE || echo LOCK_HELD
+  "
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"err"* ]]
+  [[ "$output" == *"SCAN_EXITED"* ]]
+  [[ "$output" == *"LOCK_FREE"* ]]
 }
 
 # ---------------------------------------------------------------------------

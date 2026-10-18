@@ -61,3 +61,40 @@ run_plugin_zsh() {
       $1
     "
 }
+
+# run_plugin_pty <zsh script> [typeahead answer] — like run_plugin_zsh, but
+# the script runs with a pseudo-terminal on stdin (via zsh/zpty), so tty-mode
+# code paths execute for real. The script's output is printed with CRs
+# stripped. A helper `tty_flag <flag>` (prints on/off from `stty -a`) is
+# predefined. With [typeahead answer]: once the script prints READY, type
+# <typeahead>, then after 1.5 s type <answer> (pair with a `sleep 1` after
+# READY so the typeahead is queued before the code under test reads).
+run_plugin_pty() {
+  cat > "$TMP_DIR/pty.zsh" <<EOF
+source '$ZPUN_PLUGIN_ROOT/zsh-pkg-update-nag.plugin.zsh'
+_zpun_config_load
+tty_flag() {
+  local cur=" \${\$(stty -a)//[;\$'\n'\$'\t']/ } "
+  [[ \$cur == *" \$1 "* ]] && print on || print off
+}
+$1
+print -r -- PTY_DONE
+EOF
+  run_plugin_zsh "
+    zmodload zsh/zpty
+    zpty _t 'zsh -f $TMP_DIR/pty.zsh'
+    local out= line
+    if [[ -n '${2:-}' ]]; then
+      zpty -r _t line '*READY*'
+      zpty -w -n _t '${2:-}'
+      sleep 1.5
+      zpty -w -n _t '${3:-}'
+    fi
+    while zpty -r _t line; do
+      out+=\$line
+      [[ \$line == *PTY_DONE* ]] && break
+    done
+    zpty -d _t
+    print -r -- \"\${out//\$'\\r'/}\"
+  "
+}

@@ -87,8 +87,8 @@ teardown() { teardown_env ; }
 
 @test "read_choice: valid keypress passes through unchanged" {
   run run_plugin_zsh '
-    choice=$(printf "s" | _zpun_ui_read_choice "p" "yns" "y")
-    print -r -- "[$choice]"
+    _zpun_ui_read_choice "p" "yns" "y" < <(printf "s")
+    print -r -- "[$REPLY]"
   '
   [ "$status" -eq 0 ]
   [[ "$output" == *"[s]"* ]]
@@ -96,8 +96,8 @@ teardown() { teardown_env ; }
 
 @test "read_choice: ESC maps to 'n' when n is in the valid set" {
   run run_plugin_zsh '
-    choice=$(printf "\033" | _zpun_ui_read_choice "p" "yns" "y")
-    print -r -- "[$choice]"
+    _zpun_ui_read_choice "p" "yns" "y" < <(printf "\033")
+    print -r -- "[$REPLY]"
   '
   [ "$status" -eq 0 ]
   [[ "$output" == *"[n]"* ]]
@@ -105,8 +105,8 @@ teardown() { teardown_env ; }
 
 @test "read_choice: ESC falls back to default when n is not valid" {
   run run_plugin_zsh '
-    choice=$(printf "\033" | _zpun_ui_read_choice "p" "ya" "y")
-    print -r -- "[$choice]"
+    _zpun_ui_read_choice "p" "ya" "y" < <(printf "\033")
+    print -r -- "[$REPLY]"
   '
   [ "$status" -eq 0 ]
   [[ "$output" == *"[y]"* ]]
@@ -114,8 +114,8 @@ teardown() { teardown_env ; }
 
 @test "read_choice: unrecognised key declines when n is in the valid set" {
   run run_plugin_zsh '
-    choice=$(printf "w" | _zpun_ui_read_choice "p" "yns" "y")
-    print -r -- "[$choice]"
+    _zpun_ui_read_choice "p" "yns" "y" < <(printf "w")
+    print -r -- "[$REPLY]"
   '
   [ "$status" -eq 0 ]
   [[ "$output" == *"[n]"* ]]
@@ -123,8 +123,8 @@ teardown() { teardown_env ; }
 
 @test "read_choice: unrecognised key falls back to default when n is not valid" {
   run run_plugin_zsh '
-    choice=$(printf "w" | _zpun_ui_read_choice "p" "ya" "y")
-    print -r -- "[$choice]"
+    _zpun_ui_read_choice "p" "ya" "y" < <(printf "w")
+    print -r -- "[$REPLY]"
   '
   [ "$status" -eq 0 ]
   [[ "$output" == *"[y]"* ]]
@@ -169,4 +169,121 @@ teardown() { teardown_env ; }
   [[ "$output" == *"npm:"* ]]
   [[ "$output" == *"uv:"* ]]
   [[ "$output" == *"gem:"* ]]
+}
+
+# ---------------------------------------------------------------------------
+# tty handling. The capture's tty restore happens only at a prompt
+# (_zpun_tty_restore_precmd): verbatim if nothing else touched the tty while
+# we held it; otherwise only our own flags are flipped back, so another
+# program's change is never clobbered by a stale snapshot.
+# ---------------------------------------------------------------------------
+
+@test "tty_apply: the undo list covers only the flags it actually changed" {
+  run run_plugin_pty '
+    stty echo icanon
+    _zpun_tty_apply -icanon echo
+    print -r -- "undo=[${${(@ps:\t:)REPLY}[3]}]"
+    _zpun_tty_undo "$REPLY"
+  '
+  [ "$status" -eq 0 ]
+  # echo was already on: unchanged, so it is not in the undo list.
+  [[ "$output" == *"undo=[icanon]"* ]]
+}
+
+@test "input_capture: ending the capture does not touch the tty until a prompt" {
+  run run_plugin_pty '
+    stty echo icanon
+    _zpun_input_capture_begin
+    _zpun_input_capture_end
+    print -r -- "ended: echo=$(tty_flag echo) icanon=$(tty_flag icanon)"
+    print -r -- "hook=${precmd_functions[(r)_zpun_tty_restore_precmd]:-absent}"
+    _zpun_tty_restore_precmd
+    print -r -- "prompt: echo=$(tty_flag echo) icanon=$(tty_flag icanon)"
+    print -r -- "after=${precmd_functions[(r)_zpun_tty_restore_precmd]:-absent}"
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"ended: echo=off icanon=off"* ]]
+  [[ "$output" == *"hook=_zpun_tty_restore_precmd"* ]]
+  [[ "$output" == *"prompt: echo=on icanon=on"* ]]
+  [[ "$output" == *"after=absent"* ]]
+}
+
+@test "input_capture: unchanged tty is restored verbatim (echo-off start stays off)" {
+  run run_plugin_pty '
+    stty -echo icanon
+    _zpun_input_capture_begin
+    _zpun_input_capture_end
+    _zpun_tty_restore_precmd
+    print -r -- "prompt: echo=$(tty_flag echo) icanon=$(tty_flag icanon)"
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"prompt: echo=off icanon=on"* ]]
+}
+
+@test "input_capture: a concurrent tty change survives; only our flags flip back" {
+  run run_plugin_pty '
+    stty echo icanon ixon
+    _zpun_input_capture_begin
+    stty -ixon   # something else changes the tty while we hold it
+    _zpun_input_capture_end
+    _zpun_tty_restore_precmd
+    print -r -- "prompt: echo=$(tty_flag echo) icanon=$(tty_flag icanon) ixon=$(tty_flag ixon)"
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"prompt: echo=on icanon=on ixon=off"* ]]
+}
+
+@test "tty_release: hands upgraders echo+icanon before the prompt-time restore" {
+  run run_plugin_pty '
+    stty echo icanon
+    _zpun_input_capture_begin
+    _zpun_input_capture_end
+    _zpun_tty_release
+    print -r -- "released: echo=$(tty_flag echo) icanon=$(tty_flag icanon)"
+    _zpun_tty_restore_precmd
+    print -r -- "prompt: echo=$(tty_flag echo) icanon=$(tty_flag icanon)"
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"released: echo=on icanon=on"* ]]
+  [[ "$output" == *"prompt: echo=on icanon=on"* ]]
+}
+
+@test "input_capture: begin while a restore is pending keeps the original snapshot" {
+  run run_plugin_pty '
+    stty echo icanon
+    _zpun_input_capture_begin
+    _zpun_input_capture_end
+    _zpun_input_capture_begin   # tty is still in capture mode here
+    _zpun_input_capture_end
+    _zpun_tty_restore_precmd
+    print -r -- "prompt: echo=$(tty_flag echo) icanon=$(tty_flag icanon)"
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"prompt: echo=on icanon=on"* ]]
+}
+
+@test "has_typed_input: leaves the tty exactly as it found it" {
+  run run_plugin_pty '
+    stty echo icanon
+    _zpun_has_typed_input
+    print -r -- "after: echo=$(tty_flag echo) icanon=$(tty_flag icanon)"
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"after: echo=on icanon=on"* ]]
+}
+
+# read_choice runs in the calling shell (REPLY, not $(...)): type-ahead it
+# drains before reading must survive in _ZPUN_INPUT_BUFFER to be replayed,
+# rather than vanishing with a subshell's copy.
+@test "read_choice: type-ahead drained during a capture survives for replay" {
+  run run_plugin_pty '
+    stty echo icanon
+    _zpun_input_capture_begin
+    print -r -- READY
+    sleep 1      # "abc" is typed here, queued while captured
+    _zpun_ui_read_choice "P?" yn y 2>/dev/null
+    print -r -- "choice=[$REPLY] buffer=[$_ZPUN_INPUT_BUFFER]"
+  ' abc y
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"choice=[y] buffer=[abc]"* ]]
 }
