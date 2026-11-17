@@ -24,7 +24,7 @@ A zsh plugin that surfaces outdated global packages at the start of a shell sess
 - **`n`** (or Esc): skip everything; no re-nag until the next interval.
 - **`s`**: step through per-package `Y/n` across all managers.
 
-Supports **Homebrew** (formulae and casks), **npm (global)**, **pnpm (global)**, **uv tools**, **RubyGems**, and **cargo** (via [`cargo-update`](https://crates.io/crates/cargo-update)). Each manager is independently configurable as `all`, `off`, or an explicit allowlist.
+Supports **Homebrew** (formulae and casks), **npm (global)**, **pnpm (global)**, **bun (global)**, **uv tools**, **RubyGems**, and **cargo** (via [`cargo-update`](https://crates.io/crates/cargo-update)). Each manager is independently configurable as `all`, `off`, or an explicit allowlist.
 
 ### Why?
 
@@ -123,6 +123,7 @@ zsh_pkg_update_nag_mode=prompt
 zsh_pkg_update_nag_brew=all
 zsh_pkg_update_nag_npm=all
 zsh_pkg_update_nag_pnpm=all
+zsh_pkg_update_nag_bun=all
 zsh_pkg_update_nag_uv=all
 zsh_pkg_update_nag_gem=off
 zsh_pkg_update_nag_cargo=all
@@ -241,7 +242,7 @@ zsh_pkg_update_nag_min_age_brew=0      # off for brew
 
 Per-manager overrides (`zsh_pkg_update_nag_min_age_<manager>`) win over the global, even when set to `0`. Leave a per-manager variable unset to inherit the global.
 
-For **npm**, **pnpm**, **uv**, and **gem**, when the latest release is younger
+For **npm**, **pnpm**, **bun**, **uv**, and **gem**, when the latest release is younger
 than your `min_age` threshold the plugin does not hide the package. It offers the
 newest stable version that is old enough instead (prereleases, yanked, and
 unpublished versions are skipped), and the upgrade is pinned to that exact
@@ -251,7 +252,12 @@ until it ages past the threshold.
 
 One per-manager caveat: npm's `npm view` does not expose per-version deprecation,
 so a deprecated-but-still-installable npm version can occasionally be offered.
-pnpm (which reads the registry document directly) does skip deprecated versions.
+pnpm and bun (which read the registry document directly) do skip deprecated versions.
+
+If bun's own `install.minimumReleaseAge` is set in your global bunfig, `bun outdated -g`
+already applies it, and the scan sees the capped version. When nothing newer is old
+enough, bun 1.4.4 still lists the package with a version *older* than what you have.
+The bun provider drops those rows, so the nag never offers a downgrade.
 
 ### Prefer the upstream feature when one exists
 
@@ -262,28 +268,30 @@ If your package manager has minimum-release-age built in, use **that** for those
 | brew | None (homebrew/core is human-curated) | Use this plugin's setting |
 | npm | [`min-release-age`](https://docs.npmjs.com/cli/v11/using-npm/config#min-release-age) (npm 11+) | Prefer npm's; this plugin's setting is the fallback when you can't change `.npmrc` |
 | pnpm | [`minimumReleaseAge`](https://pnpm.io/settings#minimumreleaseage) in `.npmrc` | Prefer pnpm's; this plugin's setting is the fallback |
+| bun | [`install.minimumReleaseAge`](https://bun.com/docs/runtime/bunfig#install-minimumreleaseage) (seconds) in `bunfig.toml` | Prefer bun's; this plugin's setting is the fallback |
 | uv | [`--exclude-newer DATE`](https://docs.astral.sh/uv/reference/cli/#uv-pip-install--exclude-newer) (per-invocation) | This plugin's setting is easier for ongoing use |
 | gem | None | Use this plugin's setting |
 | cargo | [`--cooldown <duration>`](https://github.com/nabijaczleweli/cargo-update/blob/master/man/cargo-install-update.md) on `cargo install-update` (cargo-update ≥ 20.0.0) | This plugin forwards the configured threshold to `--cooldown` automatically. Nothing extra to set up. |
 
-When npm/pnpm/uv/gem lack a native minimum-age setting (or you can't change their config), this plugin resolves to the newest allowed version rather than hiding the package entirely.
+When npm/pnpm/bun/uv/gem lack a native minimum-age setting (or you can't change their config), this plugin resolves to the newest allowed version rather than hiding the package entirely.
 
 ### Performance
 
-Each outdated package needs one lookup the first time it's seen, and the result is cached so steady-state cost is near-zero. Gate-mode lookups (brew) cache immutable publish dates forever in `$XDG_STATE_HOME/zsh-pkg-update-nag/age_cache.tsv`; resolve-mode managers (npm/pnpm/uv/gem) cache each package's version list under `version_lists/` with a TTL (see below). Most users see high cache-hit rates after a day or two.
+Each outdated package needs one lookup the first time it's seen, and the result is cached so steady-state cost is near-zero. Gate-mode lookups (brew) cache immutable publish dates forever in `$XDG_STATE_HOME/zsh-pkg-update-nag/age_cache.tsv`; resolve-mode managers (npm/pnpm/bun/uv/gem) cache each package's version list under `version_lists/` with a TTL (see below). Most users see high cache-hit rates after a day or two.
 
 | Manager | Lookup source | Cold-cache cost |
 |---|---|---|
 | brew | `brew info --json=v2` (~1.2 s fixed) plus a single GitHub GraphQL query covering every package via `gh api graphql` or `curl` with `$GITHUB_TOKEN`. Falls back to per-package serial REST when neither is available. | ~3 s for any number of packages on the fast path; ~N seconds on the unauth REST fallback |
 | npm | `npm view <pkg> --json` + `jq` (config-aware via the npm CLI) | ~350–650 ms (network) per package |
 | pnpm | `https://registry.npmjs.org/<pkg>` via `curl` + `jq` | ~100–300 ms per package |
+| bun | Same registry lookup as pnpm (`bun outdated -g` has no JSON mode, so the scan parses its table) | ~100–300 ms per package |
 | uv | `https://pypi.org/pypi/<pkg>/json` via `curl` + `jq` | ~100–300 ms per package |
 | gem | `https://rubygems.org/api/v1/versions/<pkg>.json` via `curl` + `jq` | ~100–300 ms per package |
 | cargo | `cargo install-update --list --cooldown <Nd>` (no per-package call from this plugin) | Whatever cargo-update spends refreshing the registry index (roughly one sparse-index fetch per installed cargo binary), bounded by the provider timeout |
 
 Real-world: cold cache, 35 outdated brew packages with `gh` authenticated → about 7 s total. Steady state with cache populated: ~3–4 s regardless of N. Background mode keeps that latency entirely off the startup path. Each provider call is wrapped by `ZSH_PKG_UPDATE_NAG_PROVIDER_TIMEOUT` (default 10 s) so a hung HTTP request can never extend the scan past that cap. If a single manager is too slow even in the background, set its per-manager override to `0` to disable the lookup for it.
 
-Resolve mode (npm/pnpm/uv/gem) fetches each outdated package's full version list
+Resolve mode (npm/pnpm/bun/uv/gem) fetches each outdated package's full version list
 once and caches it under `version_lists/` with a TTL
 (`ZSH_PKG_UPDATE_NAG_MIN_AGE_LIST_TTL`, default 24h / 86400s), so steady-state
 cost stays near zero within the TTL window. This is the same single registry call

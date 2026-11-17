@@ -10,6 +10,7 @@ _zpun_config_load() {
   : ${zsh_pkg_update_nag_brew:=all}
   : ${zsh_pkg_update_nag_npm:=all}
   : ${zsh_pkg_update_nag_pnpm:=all}
+  : ${zsh_pkg_update_nag_bun:=all}
   : ${zsh_pkg_update_nag_uv:=all}
   : ${zsh_pkg_update_nag_gem:=off}
   : ${zsh_pkg_update_nag_cargo:=all}

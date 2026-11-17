@@ -51,7 +51,7 @@ _zpun_min_age_active() {
   setopt local_options
 
   local m override_var t
-  for m in brew npm pnpm uv gem cargo; do
+  for m in brew npm pnpm bun uv gem cargo; do
     override_var="zsh_pkg_update_nag_min_age_${m}"
     if (( ${(P)+override_var} )); then
       t=${(P)override_var:-0}
@@ -96,13 +96,13 @@ _zpun_collect_outdated() {
   if _zpun_min_age_active; then
     source "$_ZPUN_DIR/lib/min_age.zsh"
     _have_min_age=1
-    for manager in brew npm pnpm uv gem cargo; do
+    for manager in brew npm pnpm bun uv gem cargo; do
       _zpun_manager_enabled "$manager" || continue
       source "$_ZPUN_DIR/lib/providers/${manager}.zsh"
     done
   fi
 
-  for manager in brew npm pnpm uv gem cargo; do
+  for manager in brew npm pnpm bun uv gem cargo; do
     _zpun_manager_enabled "$manager" || continue
     provider_fn="_zpun_provider_${manager}"
 
@@ -179,7 +179,7 @@ _zpun_timeout_prefix() {
 
 # _zpun_run_upgrade — execute a single upgrade command array-style.
 # Arguments: <manager> <package> [<version>]
-# When version is provided, npm/pnpm/uv/gem pin to that exact version.
+# When version is provided, npm/pnpm/bun/uv/gem pin to that exact version.
 # When omitted, those fall back to latest-tracking commands.
 # brew always uses `brew upgrade <pkg>` (version arg is ignored), adding
 # `--yes` to skip Homebrew's own confirmation only when brew_ask is off.
@@ -211,6 +211,7 @@ _zpun_run_upgrade() {
       ;;
     npm)  cmd=(npm install -g "${pkg}@${version:-latest}") ;;
     pnpm) cmd=(pnpm add -g "${pkg}@${version:-latest}") ;;
+    bun)  cmd=(bun add -g "${pkg}@${version:-latest}") ;;
     uv)   if [[ -n $version ]]; then cmd=(uv tool install --force "${pkg}==${version}")
           else cmd=(uv tool upgrade "$pkg"); fi ;;
     gem)  if [[ -n $version ]]; then cmd=(gem install "$pkg" -v "$version")

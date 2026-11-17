@@ -44,7 +44,7 @@ teardown() { teardown_env ; }
 }
 
 @test "collect returns nothing when all managers report empty" {
-  ZPUN_FIXTURE_BREW=empty ZPUN_FIXTURE_NPM=empty ZPUN_FIXTURE_PNPM=empty ZPUN_FIXTURE_UV=empty ZPUN_FIXTURE_CARGO=empty \
+  ZPUN_FIXTURE_BREW=empty ZPUN_FIXTURE_NPM=empty ZPUN_FIXTURE_PNPM=empty ZPUN_FIXTURE_BUN=empty ZPUN_FIXTURE_UV=empty ZPUN_FIXTURE_CARGO=empty \
     run run_plugin_zsh "_zpun_collect_outdated"
   [ "$status" -eq 0 ]
   [ -z "$output" ]
@@ -73,7 +73,7 @@ teardown() { teardown_env ; }
   run run_plugin_zsh "export zsh_pkg_update_nag_gem=all; _zpun_collect_outdated"
   [ "$status" -eq 0 ]
   [ -n "$output" ]
-  bogus="$(printf '%s\n' "$output" | grep -vE $'^(brew|npm|pnpm|uv|gem|cargo)\t' | grep -v '^$' || true)"
+  bogus="$(printf '%s\n' "$output" | grep -vE $'^(brew|npm|pnpm|bun|uv|gem|cargo)\t' | grep -v '^$' || true)"
   [ -z "$bogus" ] || { echo "non-row output leaked into collector:"; echo "$bogus"; false; }
 }
 
@@ -147,6 +147,7 @@ teardown() { teardown_env ; }
     _zpun_run_upgrade brew pnpm
     _zpun_run_upgrade npm typescript 5.4.5
     _zpun_run_upgrade pnpm rollup 4.30.5
+    _zpun_run_upgrade bun is-number 7.0.0
     _zpun_run_upgrade uv ruff 0.6.3
     _zpun_run_upgrade gem rails 7.1.5
     _zpun_run_upgrade cargo ripgrep 14.1.0
@@ -155,6 +156,7 @@ teardown() { teardown_env ; }
   [[ "$output" == *"brew upgrade pnpm"* ]]
   [[ "$output" == *"npm install -g typescript@5.4.5"* ]]
   [[ "$output" == *"pnpm add -g rollup@4.30.5"* ]]
+  [[ "$output" == *"bun add -g is-number@7.0.0"* ]]
   [[ "$output" == *"uv tool install --force ruff==0.6.3"* ]]
   [[ "$output" == *"gem install rails -v 7.1.5"* ]]
   # cargo upgrades via cargo-update; with no min-age set it tracks latest and
