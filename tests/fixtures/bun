@@ -1,0 +1,59 @@
+#!/bin/sh
+# Fixture: pretends to be `bun`. Honors ZPUN_FIXTURE_BUN:
+#
+#   default — `outdated -g` prints a box table with two outdated globals
+#   empty   — table with no data rows (bun prints nothing for an empty diff)
+#   fail    — exit non-zero with an error message on stderr
+#   capped  — bun's own minimumReleaseAge applied: Latest carries ` *`, one
+#             row capped above Current, one capped BELOW it (bun 1.4.4 quirk)
+
+case "$1" in
+  outdated)
+    case "${ZPUN_FIXTURE_BUN:-default}" in
+      empty)
+        echo "bun outdated v1.4.4 (38afee6c8)"
+        exit 0
+        ;;
+      fail)
+        echo "bun fixture: simulated failure" >&2
+        exit 1
+        ;;
+      capped)
+        cat <<'OUT'
+bun outdated v1.4.4 (38afee6c8)
+|----------------------------------------|
+| Package   | Current | Update | Latest  |
+|-----------|---------|--------|---------|
+| is-number | 6.0.0   | 6.0.0  | 4.0.0 * |
+|-----------|---------|--------|---------|
+| semver    | 7.5.0   | 7.5.0  | 7.6.0 * |
+|----------------------------------------|
+Note: The * indicates that version isn't true latest due to minimum release age
+OUT
+        exit 0
+        ;;
+      *)
+        cat <<'OUT'
+bun outdated v1.4.4 (38afee6c8)
+|---------------------------------------|
+| Package   | Current | Update | Latest |
+|-----------|---------|--------|--------|
+| is-number | 6.0.0   | 6.0.0  | 7.0.0  |
+|-----------|---------|--------|--------|
+| @scope/x (dev) | 1.0.0 | 1.0.0 | 1.2.0 |
+|-----------|---------|--------|--------|
+| same      | 2.0.0   | 2.0.0  | 2.0.0  |
+|---------------------------------------|
+OUT
+        exit 0
+        ;;
+    esac
+    ;;
+  add)
+    echo "bun fixture installed: $*"
+    exit 0
+    ;;
+  *)
+    exit 0
+    ;;
+esac

@@ -39,6 +39,41 @@ teardown() { teardown_env ; }
   [ -z "$output" ]
 }
 
+@test "bun provider parses the outdated -g table" {
+  run run_plugin_zsh "_zpun_provider_bun"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"is-number	6.0.0	7.0.0"* ]]
+  [[ "$output" == *"@scope/x	1.0.0	1.2.0"* ]]
+  [[ "$output" != *"same"* ]]
+  [[ "$output" != *"Package"* ]]
+}
+
+@test "bun provider is silent when nothing is outdated" {
+  ZPUN_FIXTURE_BUN=empty run run_plugin_zsh "_zpun_provider_bun"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "bun provider keeps bun-min-age-capped rows only when they upgrade" {
+  ZPUN_FIXTURE_BUN=capped run run_plugin_zsh "_zpun_provider_bun"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"semver	7.5.0	7.6.0"* ]]
+  [[ "$output" != *"is-number"* ]]
+  [[ "$output" != *"*"* ]]
+}
+
+@test "bun provider is silent when bun fails" {
+  ZPUN_FIXTURE_BUN=fail run run_plugin_zsh "_zpun_provider_bun"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "bun versions hook delegates to the npm registry lookup" {
+  run run_plugin_zsh "_zpun_min_age_versions_bun rollup"
+  [ "$status" -eq 0 ]
+  [ -n "$output" ]
+}
+
 @test "uv provider parses 'latest: vX' lines" {
   run run_plugin_zsh "_zpun_provider_uv"
   [ "$status" -eq 0 ]
